@@ -1,0 +1,10 @@
+{
+  "name": "financiabass",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/engine/*.test.js",
+    "smoke": "node test/smoke/smoke.mjs",
+    "serve": "python3 -m http.server 8080"
+  }
+}

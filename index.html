@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>FinanciaBass</title>
+  <meta name="description" content="Cuánto puedo gastar hoy, pagos de tarjetas y ahorro.">
+  <meta name="theme-color" content="#0f766e">
+  <meta name="apple-mobile-web-app-title" content="FinanciaBass">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./css/app.css">
+</head>
+<body>
+  <main id="main" class="wrap"></main>
+
+  <button id="fab" class="fab" type="button" aria-label="Registrar movimiento">＋</button>
+  <nav class="tabbar" aria-label="Secciones">
+    <a href="#/hoy"><span>🏠</span>Hoy</a>
+    <a href="#/movs"><span>🧾</span>Movimientos</a>
+    <a href="#/tarjetas"><span>💳</span>Tarjetas</a>
+    <a href="#/plan"><span>🗓️</span>Plan</a>
+    <a href="#/mas"><span>⚙️</span>Más</a>
+  </nav>
+
+  <div id="sheet" class="sheet" hidden>
+    <div class="sheet-backdrop" data-close></div>
+    <div class="sheet-panel" role="dialog" aria-modal="true">
+      <button type="button" class="sheet-x" data-close aria-label="Cerrar">✕</button>
+      <div class="sheet-body"></div>
+    </div>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+
+  <script type="module" src="./js/app.js"></script>
+</body>
+</html>

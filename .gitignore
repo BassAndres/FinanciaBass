@@ -1,0 +1,7 @@
+node_modules/
+test/private/
+*.local.json
+backup*.json
+financiabass-respaldo-*
+*.pdf
+.DS_Store

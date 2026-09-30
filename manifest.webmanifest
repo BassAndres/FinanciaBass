@@ -1,0 +1,29 @@
+{
+  "id": "./?app=financiabass",
+  "name": "FinanciaBass",
+  "short_name": "FinanciaBass",
+  "description": "Cuánto puedo gastar hoy, pagos de tarjetas y ahorro.",
+  "lang": "es-MX",
+  "start_url": "./?source=pwa",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f7f5",
+  "theme_color": "#0f766e",
+  "launch_handler": { "client_mode": "navigate-existing" },
+  "icons": [
+    { "src": "./icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "./icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "./icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Registrar gasto", "short_name": "Gasto", "url": "./?new=1", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Metro $5", "short_name": "Metro", "url": "./?add=5&desc=Metro&cat=transporte", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] },
+    { "name": "Metrobús $6", "short_name": "Metrobús", "url": "./?add=6&desc=Metrob%C3%BAs&cat=transporte", "icons": [{ "src": "./icons/icon-192.png", "sizes": "192x192" }] }
+  ],
+  "share_target": {
+    "action": "./",
+    "method": "GET",
+    "params": { "text": "raw", "title": "title" }
+  }
+}
