@@ -1,5 +1,5 @@
 // Service worker: guarda la app para que abra sin internet. Sube VERSION cuando cambie algún archivo.
-const VERSION = 'fb-v2';
+const VERSION = 'fb-v3';
 const FILES = [
   './',
   './index.html',
@@ -37,13 +37,21 @@ self.addEventListener('activate', (e) => {
   e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== VERSION).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 
-// Navegaciones (incluye ?add=… de los atajos): siempre la página principal guardada.
+// Red primero: con internet siempre se carga la versión más nueva; la caché solo se usa sin conexión.
 self.addEventListener('fetch', (e) => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
-  if (req.mode === 'navigate') {
-    e.respondWith(fetch(req).catch(() => caches.match('./index.html')));
-    return;
-  }
-  e.respondWith(caches.match(req, { ignoreSearch: true }).then((hit) => hit || fetch(req)));
+  e.respondWith((async () => {
+    try {
+      const res = await fetch(req, { cache: 'no-cache' });
+      if (res.ok && req.mode !== 'navigate') {
+        const copy = res.clone();
+        caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+      }
+      return res;
+    } catch {
+      if (req.mode === 'navigate') return (await caches.match('./index.html')) || Response.error();
+      return (await caches.match(req, { ignoreSearch: true })) || Response.error();
+    }
+  })());
 });

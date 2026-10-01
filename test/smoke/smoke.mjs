@@ -11,10 +11,15 @@ import { demoState } from '../fixtures/demo.js';
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const root = fileURLToPath(new URL('../../', import.meta.url));
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json' };
+let deployed = ''; // simula publicar una versión nueva del CSS
 const server = createServer(async (req, res) => {
   const path = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/FinanciaBass/, '');
   const file = normalize(join(root, path.endsWith('/') ? `${path}index.html` : path));
-  try { res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' }); res.end(await readFile(file)); }
+  try {
+    let body = await readFile(file);
+    if (deployed && file.endsWith('app.css')) body = Buffer.concat([body, Buffer.from(deployed)]);
+    res.writeHead(200, { 'content-type': types[extname(file)] || 'application/octet-stream' }); res.end(body);
+  }
   catch { res.writeHead(404); res.end(); }
 }).listen(0);
 const base = `http://localhost:${server.address().port}/FinanciaBass/`;
@@ -81,6 +86,13 @@ await ctx.setOffline(true);
 await page.reload();
 assert.equal(await page.locator('.hero-amount').textContent(), '$17.50');
 await ctx.setOffline(false);
+
+// Una versión nueva publicada se ve al recargar, sin borrar la caché.
+deployed = ':root{--deploy:"nueva"}';
+await page.reload();
+await page.locator('.hero-amount').waitFor();
+const marker = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--deploy').trim());
+assert.equal(marker, '"nueva"');
 
 assert.deepEqual(errors, []);
 await page.screenshot({ path: process.env.SHOT || '/tmp/financiabass-hoy.png', fullPage: true });
