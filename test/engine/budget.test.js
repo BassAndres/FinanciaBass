@@ -227,3 +227,10 @@ test('liquidez: un fijo de la cuenta que vence hoy y no se ha pagado sí cuenta'
   const b = computeDashboard(s, '2026-10-12').liquidity.min;
   assert.ok(b <= a + 10000, `${a} → ${b}`);
 });
+
+test('pagar en la fecha límite: no sugiere adelantos', () => {
+  const s = demoState();
+  s.settings.payStrategy = 'due';
+  const d = computeDashboard(s, '2026-10-01');
+  assert.deepEqual(d.payPlan.map((p) => [p.date, p.onDue, p.due]), [['2026-10-23', true, '2026-10-23']]);
+});

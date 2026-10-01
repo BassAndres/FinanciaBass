@@ -314,13 +314,14 @@ export function periodSheet() {
       { name: 'rate', label: 'Transporte diario apartado', type: 'money', value: pesos(st.transport?.rate) },
       { name: 'tacc', label: 'Con qué pago el transporte', options: accOptions((a) => a.type !== 'savings'), value: st.transport?.account },
       { name: 'wk', label: 'Días con transporte', type: 'seg', value: (st.transport?.weekdays || []).length === 5 ? 'lv' : 'all', options: [['all', 'Todos los días'], ['lv', 'Lunes a viernes']] },
+      { name: 'strategy', label: 'Cómo pagar las tarjetas', type: 'seg', value: st.payStrategy || 'asap', options: [['asap', 'Lo antes posible'], ['due', 'En su fecha límite']] },
       { name: 'floor', label: 'Mínimo que siempre dejo en la cuenta', type: 'money', value: pesos(st.liquidityFloor) },
       { name: 'grace', label: 'Días de espera para un ingreso', hint: 'Si no llega en ese tiempo, deja de contarse', options: [['1', '1 día'], ['2', '2 días'], ['3', '3 días'], ['5', '5 días'], ['7', '7 días']], value: String(st.overdueGraceDays ?? 2) },
     ],
     onSave(_, v) {
       if (!v.firstEnd || v.firstEnd < st.firstStart) { toast('Revisa la fecha'); return false; }
       ctx.commit((s) => {
-        Object.assign(s.settings, { firstEnd: v.firstEnd, liquidityFloor: parseAmount(v.floor) || 0, overdueGraceDays: Number(v.grace) });
+        Object.assign(s.settings, { firstEnd: v.firstEnd, liquidityFloor: parseAmount(v.floor) || 0, overdueGraceDays: Number(v.grace), payStrategy: v.strategy });
         s.settings.transport = { ...s.settings.transport, rate: parseAmount(v.rate) || 0, account: v.tacc, weekdays: v.wk === 'lv' ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6] };
       }, 'Ajustes guardados', true);
     },

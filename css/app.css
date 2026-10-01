@@ -277,3 +277,5 @@ textarea.mono { font-size: .76rem; word-break: break-all; }
 .refund[open] summary { margin-bottom: 8px; }
 .refund-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
 .refund-row .pre { color: var(--muted); font-weight: 700; }
+.due p b { font-weight: 800; }
+.sugg { color: var(--pos); font-weight: 700; }

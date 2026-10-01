@@ -66,12 +66,12 @@ export function hoyView(state, d) {
   ${d.deficit ? `<div class="notice bad">${icon('alert')}<p><b>Este periodo no alcanza.</b> Te faltan ${money(-Math.min(d.R, d.libre))}. En <a href="#/plan">Plan</a> puedes saltar un fijo o usar tu alcancía.</p></div>` : ''}
   ${d.liquidity.short ? `<div class="notice warn">${icon('clock')}<p><b>Ojo con el ${fmtDate(d.liquidity.minDate)}.</b> Ese día te faltarían ${money(d.liquidity.short)} (${esc(d.liquidity.cause || 'pagos')}). Ya lo tomé en cuenta en tu número de hoy.</p></div>` : ''}
 
-  ${payToday.length ? group('Paga hoy', `<div class="panel">${payToday.map((p) => item({
+  ${payToday.length ? group(payToday.every((p) => !p.onDue) ? 'Puedes adelantar hoy' : 'Pagos de tarjeta', `<div class="panel">${payToday.map((p) => item({
     lead: `<span class="ic hue-ink">${icon('card', 18)}</span>`,
     title: `${money(p.amount)} a ${esc(p.cardName)}`,
-    meta: p.onDue ? `Fecha límite ${fmtDate(p.date)}` : 'Ya tienes el dinero: adelántalo',
+    meta: p.onDue ? `Vence ${p.due <= d.today ? 'hoy' : `el ${fmtDate(p.due)}`}` : `Opcional · ya tienes el dinero. Fecha límite: ${fmtDate(p.due)}`,
     trail: `<button class="btn sm" data-action="pay" data-card="${esc(p.card)}" data-amount="${p.amount}">Ya pagué</button>`,
-  })).join('')}</div>`) : ''}
+  })).join('')}</div>${payToday.some((p) => !p.onDue) ? '<p class="foot">Adelantar es opcional: lo importante es pagar antes de la fecha límite. Si prefieres pagar en la fecha, cámbialo en Más → Editar → Periodo.</p>' : ''}`) : ''}
 
   ${d.leftover ? `<div class="notice good">${icon('savings')}<p><b>Te sobraron ${money(d.leftover.amount)} el periodo pasado.</b> ¿Los mandas a tu alcancía?</p>
     <div class="notice-actions"><button class="btn sm" data-action="leftover-save">Sí, guardar</button><button class="btn sm ghost" data-action="leftover-keep">Dejarlos</button></div></div>` : ''}
@@ -93,7 +93,7 @@ export function hoyView(state, d) {
 
   ${upcoming.length ? group('Próximos pagos', `<div class="panel">${upcoming.map((p) => item({
     lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
-    title: esc(p.cardName), meta: p.onDue ? 'En su fecha límite' : 'Abono planeado', trail: `<b class="amt">${money(p.amount)}</b>`,
+    title: esc(p.cardName), meta: p.onDue ? 'Fecha límite' : `Adelanto sugerido · límite ${fmtDate(p.due, false)}`, trail: `<b class="amt">${money(p.amount)}</b>`,
   })).join('')}</div>`, '<a class="link" href="#/tarjetas">Ver todo</a>') : ''}
 
   ${staleBackup ? `<div class="notice">${icon('shield')}<p><b>Haz un respaldo.</b> Tus datos solo viven en este celular.</p><div class="notice-actions"><button class="btn sm ghost" data-action="backup">Respaldar</button></div></div>` : ''}
@@ -155,12 +155,19 @@ export function tarjetasView(state, d) {
     return `<article class="ccard">
       <div class="ccard-head">
         <div><button type="button" class="ccard-name plain" data-action="acc-edit" data-acc="${esc(c.id)}">${esc(c.name)}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''} ${icon('adjust', 14, 'mute inline')}</button>
-        <p class="ccard-sub">${c.pay ? `Corte ${fmtDate(c.pay.cut, false)} · lo que compres hoy lo pagas el ${fmtDate(c.pay.due)}` : 'Sin fechas de corte'}</p></div>
+        <p class="ccard-sub">${c.pay ? `Próximo corte ${fmtDate(c.pay.cut, false)} · si compras hoy, lo pagas hasta el ${fmtDate(c.pay.due, false)}` : 'Sin fechas de corte'}</p></div>
         <p class="ccard-owed">${bigMoney(c.owed)}</p>
       </div>
       ${c.limit ? `<div class="meter ${tone}"><i style="width:${Math.min(100, Math.round((c.util || 0) * 100))}%"></i><span class="meter-mark"></span></div>
       <p class="ccard-sub">Usas ${pct(c.util || 0)} de ${money(c.limit, { decimals: false })}${c.msi ? ` · incluye ${money(c.msi)} a meses` : ''}</p>` : ''}
-      ${(stByCard[c.id] || []).map((s) => `<div class="due" data-action="stmt-edit" data-id="${esc(s.id)}" role="button">${icon('calendar', 18)}<p>Pago para no generar intereses <b>${money(s.remaining)}</b> antes del ${fmtDate(s.due)}${s.payFrom && s.payFrom > d.today ? `. Se puede pagar desde el ${fmtDate(s.payFrom)}` : ''}${s.paid ? `. Ya abonaste ${money(s.paid)}` : ''}</p></div>`).join('')}
+      ${(stByCard[c.id] || []).map((s) => {
+    const sugg = d.payPlan.filter((p) => p.statement === s.id && !p.onDue);
+    return `<div class="due" data-action="stmt-edit" data-id="${esc(s.id)}" role="button">${icon('calendar', 18)}<p>
+      <b>${money(s.remaining)}</b> a pagar a más tardar el <b>${fmtDate(s.due)}</b> (fecha límite, sin intereses).
+      ${s.payFrom && s.payFrom > d.today ? `<br>El banco te deja pagarlo desde el ${fmtDate(s.payFrom)}.` : ''}
+      ${s.paid ? `<br>Ya abonaste ${money(s.paid)}.` : ''}
+      ${sugg.length ? `<br><span class="sugg">Sugerido: ${sugg.map((p) => `${money(p.amount)} ${p.date <= d.today ? 'hoy' : `el ${fmtDate(p.date, false)}`}`).join(', ')}</span>` : ''}</p></div>`;
+  }).join('')}
       <div class="ccard-actions">
         <button class="btn sm" data-action="pay" data-card="${esc(c.id)}">${icon('pay', 16)}Pagar</button>
         <button class="btn sm ghost" data-action="stmt-new" data-card="${esc(c.id)}">Estado de cuenta</button>
@@ -170,8 +177,8 @@ export function tarjetasView(state, d) {
   }).join('')}
   ${d.payPlan.length ? group('Plan de pagos', `<div class="panel">${d.payPlan.map((p) => item({
     lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
-    title: esc(p.cardName), meta: p.onDue ? 'En su fecha límite' : 'Lo antes posible', trail: `<b class="amt">${money(p.amount)}</b>`,
-  })).join('')}</div><p class="foot">Se recalcula con cada movimiento y siempre deja al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>`)
+    title: esc(p.cardName), meta: p.onDue ? 'En su fecha límite' : `Adelanto opcional · límite ${fmtDate(p.due, false)}`, trail: `<b class="amt">${money(p.amount)}</b>`,
+  })).join('')}</div><p class="foot">${state.settings.payStrategy === 'due' ? 'Pagas cada tarjeta en su fecha límite.' : 'Te sugiero abonar en cuanto tengas el dinero (lo elegiste así). La fecha que importa es la límite.'} Siempre deja al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>`)
     : `<div class="empty">${icon('check', 28)}<p>Sin pagos pendientes registrados.</p></div>`}`;
 }
 

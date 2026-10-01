@@ -181,7 +181,9 @@ function liquidity(state, ctx, P, t, { liquid, disponible, base, statements }) {
   for (const { s, idx } of due) {
     let remaining = s.remaining;
     const from = s.payFrom ? Math.max(0, diffDays(s.payFrom, t)) : 0;
-    const candidates = [...new Set([0, from, ...inflowDays])].sort((a, b) => a - b).filter((z) => z >= from && z < idx);
+    // "En su fecha límite": no se adelanta nada. "Lo antes posible": se abona hoy y cada día que entra dinero.
+    const candidates = st.payStrategy === 'due' ? []
+      : [...new Set([0, from, ...inflowDays])].sort((a, b) => a - b).filter((z) => z >= from && z < idx);
     for (const z of candidates) {
       if (remaining <= 0) break;
       let m = Infinity;
@@ -189,10 +191,10 @@ function liquidity(state, ctx, P, t, { liquid, disponible, base, statements }) {
       const x = Math.min(remaining, m - floor);
       if (x <= 0) continue;
       for (let j = z; j < idx; j++) c[j] -= x;
-      plan.push({ date: addDays(t, z), card: s.card, cardName: s.cardName, amount: x, statement: s.id });
+      plan.push({ date: addDays(t, z), card: s.card, cardName: s.cardName, amount: x, statement: s.id, due: s.due });
       remaining -= x;
     }
-    if (remaining > 0) plan.push({ date: addDays(t, idx), card: s.card, cardName: s.cardName, amount: remaining, statement: s.id, onDue: true });
+    if (remaining > 0) plan.push({ date: addDays(t, idx), card: s.card, cardName: s.cardName, amount: remaining, statement: s.id, due: s.due, onDue: true });
   }
   let min = Infinity, minIdx = 0;
   for (let idx = 0; idx < days; idx++) if (c[idx] < min) { min = c[idx]; minIdx = idx; }
