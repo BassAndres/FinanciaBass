@@ -65,6 +65,7 @@ export const CAT_META = {
   fijo: { icon: 'pin', hue: 'gray', label: 'Fijo' },
   msi: { icon: 'msi', hue: 'violet', label: 'Meses sin intereses' },
   ingreso: { icon: 'income', hue: 'green', label: 'Ingreso' },
+  reembolso: { icon: 'move', hue: 'green', label: 'Me regresaron' },
   ahorro: { icon: 'savings', hue: 'green', label: 'Ahorro' },
   pago: { icon: 'pay', hue: 'gray', label: 'Pago de tarjeta' },
   mover: { icon: 'move', hue: 'gray', label: 'Movimiento' },

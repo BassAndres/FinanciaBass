@@ -109,6 +109,26 @@ assert.equal(linked, 'beca@2026-10-10');
 assert.equal(await page.locator('.hero-amount').textContent(), before);
 assert.equal(before, '$14.16');
 
+// Pagué $15 por transferencia, mi amigo me regresó $10 en efectivo: solo se descuentan $5.
+const pre = await page.evaluate(() => window.fb.dash.disponible);
+await page.click('#fab');
+for (const k of ['1', '5']) await page.click(`.keypad [data-key="${k}"]`);
+await page.click('[data-pick="account"][data-val="banco"]');
+await page.click('details.refund summary');
+await page.fill('[data-field="refund"]', '10');
+await page.click('[data-pick="refundAccount"][data-val="efectivo"]');
+await page.click('#sheet [data-sheet-action="save"]');
+assert.equal(await page.evaluate(() => window.fb.dash.disponible), pre - 500);
+// "Me dieron dinero" suma.
+await page.click('[data-action="new-income"]');
+for (const k of ['2', '0']) await page.click(`.keypad [data-key="${k}"]`);
+await page.click('[data-pick="desc"][data-val="Amigo"]');
+await page.click('#sheet [data-sheet-action="save"]');
+assert.equal(await page.evaluate(() => window.fb.dash.disponible), pre - 500 + 2000);
+// Se deshace para no mover los números de las siguientes pruebas.
+await page.evaluate(() => { const st = window.fb.state; st.tx = st.tx.filter((t) => !(t.cat === 'reembolso' || t.desc === 'Amigo' || (t.amount === 1500 && t.account === 'banco'))); localStorage.setItem('financiabass:v1', JSON.stringify(st)); });
+await page.reload();
+
 // Todas las pantallas cargan.
 for (const r of ['movs', 'tarjetas', 'plan', 'mas', 'hoy']) {
   await page.goto(`${base}#/${r}`);

@@ -124,11 +124,12 @@ function paintEntry() {
         paintEntry();
       } else if (act === 'save') saveEntry();
       else if (act === 'delete') {
-        commit((s) => { s.tx = s.tx.filter((t) => t.id !== draft.id); }, 'Movimiento borrado', true);
+        commit((s) => { s.tx = s.tx.filter((t) => t.id !== draft.id && t.group !== draft.id); }, 'Movimiento borrado', true);
         closeSheet();
       }
     };
     body.oninput = (e) => { const f = e.target.dataset.field; if (f) draft[f] = e.target.value; };
+    body.querySelector('details.refund')?.addEventListener('toggle', (e) => { draft.refundOpen = e.target.open; if (!e.target.open) draft.refund = ''; });
     body.onchange = (e) => { if (e.target.dataset.field === 'date') paintEntry(); };
   });
 }
@@ -157,8 +158,16 @@ function saveEntry() {
     if (editing) {
       const i = s.tx.findIndex((t) => t.id === editing);
       s.tx[i] = { ...s.tx[i], ...tx, review: false };
-    } else addTx(s, tx);
-  }, editing ? 'Cambios guardados' : savedMsg(tx), true);
+    } else {
+      const saved = addTx(s, tx);
+      const refund = draft.type === 'expense' ? parseAmount(draft.refund) : 0;
+      if (refund) {
+        addTx(s, { type: 'income', account: draft.refundAccount || firstOf('cash'), amount: Math.min(refund, amount), date: tx.date,
+          cat: 'reembolso', desc: `Me regresaron · ${tx.desc || 'gasto'}`, planRef: 'none', group: saved.id });
+        lastLink = null;
+      }
+    }
+  }, editing ? 'Cambios guardados' : (parseAmount(draft.refund) && draft.type === 'expense' ? `Gastaste ${money(amount - Math.min(parseAmount(draft.refund), amount))} netos` : savedMsg(tx)), true);
   closeSheet();
 }
 
@@ -218,6 +227,7 @@ const actions = {
       `${f.name} ${money(f.amount)} · sale de tu apartado de transporte`, true);
   },
   new: (el) => openEntry({ cat: el.dataset.cat }),
+  'new-income': () => openEntry({ type: 'income', account: firstOf('cash'), planRef: 'none' }),
   pay: (el) => openEntry({ type: 'pay', to: el.dataset.card, amountText: el.dataset.amount ? String(Number(el.dataset.amount) / 100) : '' }),
   adjust: (el) => openEntry({ type: 'adjust', account: el.dataset.acc }),
   'edit-tx': (el) => editTx(el.dataset.id),

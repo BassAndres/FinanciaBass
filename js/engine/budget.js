@@ -112,7 +112,7 @@ export function computeDashboard(state, today) {
   // Gasto variable (sin fijos planeados ni transporte de la bolsa): el que mueve tu número de cada día.
   const variable = state.tx.filter((x) => x.type === 'expense' && x.date >= s0 && x.date <= t && !ctx.isPlanned(x) && !ctx.isTransport(x));
   const variableSpent = variable.reduce((a, x) => a + x.amount, 0);
-  const todayTx = state.tx.filter((x) => x.date === t && x.type === 'expense');
+  const todayTx = state.tx.filter((x) => x.date === t && (x.type === 'expense' || x.type === 'income'));
   const liquid = liquidOf(now.bal, accounts);
   const statements = statementStatus(state, accounts).filter((s) => s.remaining > 0);
   const cards = cardSummaries(state, now.bal, accounts, t);
@@ -123,7 +123,7 @@ export function computeDashboard(state, today) {
   return {
     today, period: P, k, D, daysLeft: D - k, libre, base, disponible, accrued: accrued(k), periodStart: s0,
     variableSpent, otherChanges: libre - now.R - variableSpent,
-    todaySpent: todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + x.amount, 0),
+    todaySpent: todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + (x.type === 'expense' ? x.amount : -x.amount), 0),
     todayTx: todayTx.map((x) => ({ ...x, pooled: ctx.isTransport(x), planned: ctx.isPlanned(x) })),
     safeToSpend: Math.max(0, Math.min(disponible, liq.capped)),
     R: now.R, recovery, deficit: now.R < 0 || libre < 0,

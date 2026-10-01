@@ -271,3 +271,9 @@ textarea.mono { font-size: .76rem; word-break: break-all; }
 .toast { width: max-content; max-width: min(440px, calc(100% - 32px)); justify-content: space-between; line-height: 1.3; }
 .toast span { flex: 1; }
 .toast button { flex: none; }
+.refund { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+.refund summary { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: .9rem; cursor: pointer; list-style: none; }
+.refund summary::-webkit-details-marker { display: none; }
+.refund[open] summary { margin-bottom: 8px; }
+.refund-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
+.refund-row .pre { color: var(--muted); font-weight: 700; }

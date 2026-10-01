@@ -41,6 +41,7 @@ export function hoyView(state, d) {
     ...(state.settings.fares || []).map((f, i) => `<button class="tile" data-action="fare" data-i="${i}">${icon(/bus/i.test(f.name) ? 'bus' : 'metro', 22)}<span>${esc(f.name)}</span><b>${money(f.amount, { decimals: false })}</b></button>`),
     `<button class="tile" data-action="new" data-cat="comida">${icon('food', 22)}<span>Comida</span><b>&nbsp;</b></button>`,
     `<button class="tile" data-action="new" data-cat="antojos">${icon('treat', 22)}<span>Antojo</span><b>&nbsp;</b></button>`,
+    `<button class="tile" data-action="new-income">${icon('income', 22)}<span>Me dieron</span><b>dinero</b></button>`,
     `<button class="tile" data-action="new">${icon('plus', 22)}<span>Otro</span><b>&nbsp;</b></button>`,
   ].join('');
 
@@ -104,11 +105,11 @@ function todayGroup(state, d) {
   if (!txs.length) return group('Hoy', `<div class="panel"><div class="item"><span class="ic hue-gray">${icon('list', 18)}</span><span class="item-body"><span class="item-title">Aún no registras gastos hoy</span><span class="item-meta">Usa los botones de arriba o el + para registrar</span></span></div></div>`);
   return group('Hoy', `<div class="panel">${txs.map((t) => item({
     action: `data-action="edit-tx" data-id="${t.id}"`,
-    lead: badge(t.planned ? 'fijo' : t.cat),
-    title: esc(t.desc || catMeta(t.cat).label),
-    meta: `${esc(accName(state, t.account))}${t.pooled ? ' · del apartado de transporte' : t.planned ? ' · ya estaba apartado' : ''}`,
-    trail: `<b class="amt ${t.pooled || t.planned ? 'mute' : ''}">${money(-t.amount)}</b>`,
-  })).join('')}</div>`, `<span class="group-sum">${d.todaySpent ? `−${money(d.todaySpent)} de tu número` : ''}</span>`);
+    lead: badge(t.type === 'income' ? (t.cat === 'reembolso' ? 'reembolso' : 'ingreso') : t.planned ? 'fijo' : t.cat),
+    title: esc(t.desc || catMeta(t.type === 'income' ? 'ingreso' : t.cat).label),
+    meta: `${esc(accName(state, t.account))}${t.pooled ? ' · del apartado de transporte' : t.planned ? ' · ya estaba contemplado' : t.type === 'income' ? ' · suma a tu número' : ''}`,
+    trail: `<b class="amt ${t.pooled || t.planned ? 'mute' : t.type === 'income' ? 'pos' : ''}">${t.type === 'income' ? money(t.amount, { sign: true }) : money(-t.amount)}</b>`,
+  })).join('')}</div>`, `<span class="group-sum">${d.todaySpent > 0 ? `−${money(d.todaySpent)} de tu número` : d.todaySpent < 0 ? `+${money(-d.todaySpent)} a tu número` : ''}</span>`);
 }
 
 function promptRow(state, i) {
@@ -315,6 +316,12 @@ export function entrySheet(state, draft, candidates = []) {
     ${candidates.map((i) => `<button type="button" class="chip ${draft.planRef === i.id ? 'on' : ''}" data-pick="planRef" data-val="${esc(i.id)}">${icon(i.kind === 'income' ? 'income' : 'pin', 16)}${esc(i.name)} · ${money(i.amount, { decimals: false })}</button>`).join('')}
   </div>` : ''}
   ${draft.type === 'expense' ? `<p class="label">Categoría</p><div class="chips">${CATEGORIES.map((k) => `<button type="button" class="chip ${draft.cat === k ? 'on' : ''}" data-pick="cat" data-val="${k}">${icon(catMeta(k).icon, 16)}${catMeta(k).label}</button>`).join('')}</div>` : ''}
+  ${draft.type === 'income' ? `<p class="label">¿De quién?</p><div class="chips">${['Amigo', 'Mamá', 'Papá', 'Familia', 'Venta', 'Otro'].map((w) => `<button type="button" class="chip ${draft.desc === w ? 'on' : ''}" data-pick="desc" data-val="${w}">${w}</button>`).join('')}</div>` : ''}
+  ${draft.type === 'expense' && !draft.id ? `<details class="refund" ${draft.refund || draft.refundOpen ? 'open' : ''}><summary>${icon('income', 16)}¿Alguien te regresó una parte?</summary>
+    <p class="foot top0">Ej.: pagaste $150 y tu amigo te dio $100 en efectivo. Solo se descuentan $50.</p>
+    <div class="refund-row"><span class="pre">$</span><input class="field" type="text" inputmode="decimal" placeholder="0" value="${esc(draft.refund || '')}" data-field="refund"></div>
+    <div class="chips">${state.accounts.filter((a) => (a.type === 'bank' || a.type === 'cash') && !a.archived).map((a) => `<button type="button" class="chip ${(draft.refundAccount || state.accounts.find((x) => x.type === 'cash')?.id) === a.id ? 'on' : ''}" data-pick="refundAccount" data-val="${esc(a.id)}">${icon(ACC_ICON[a.type], 16)}${esc(a.name)}</button>`).join('')}</div>
+  </details>` : ''}
   <div class="fields">
     ${draft.type !== 'adjust' ? `<input class="field" type="text" placeholder="Descripción (opcional)" value="${esc(draft.desc || '')}" data-field="desc">` : ''}
     <input class="field" type="date" value="${esc(draft.date)}" data-field="date" aria-label="Fecha">
