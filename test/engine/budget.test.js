@@ -259,3 +259,15 @@ test('cómo te fue cada día: empezaste, gastaste, terminaste', async () => {
   ]);
   assert.equal(computeDashboard(s, '2026-10-02').startOfDay, 1000);
 });
+
+test('el plan empieza el mismo día del saldo inicial: lo de ese día no se cuenta doble', () => {
+  const s = demoState();
+  s.settings.firstStart = '2026-09-30';
+  s.schedules.push({ id: 'pago30', kind: 'income', name: 'Pago', amount: 500000, account: 'banco', rule: { type: 'once', date: '2026-09-30' } });
+  const d = computeDashboard(s, '2026-09-30');
+  assert.ok(!d.instances.some((i) => i.id === 'pago30@2026-09-30'));
+  s.tx.push(tx({ type: 'expense', account: 'efectivo', amount: 2000, date: '2026-09-30', cat: 'comida' }));
+  const d2 = computeDashboard(s, '2026-09-30');
+  assert.equal(d2.todaySpent, 2000);
+  assert.equal(d2.disponible, d2.startOfDay - 2000);
+});

@@ -31,7 +31,9 @@ function transportDays(settings, from, to) {
 function periodContext(state, P) {
   const accounts = indexAccounts(state);
   const st = state.settings;
-  const instances = expandSchedules(state.schedules, P.s, P.e, state.overrides);
+  // Lo planeado hasta el día en que capturaste tus saldos ya está dentro de esos saldos: no se vuelve a contar.
+  const from = st.openingDate && st.openingDate >= P.s ? addDays(st.openingDate, 1) : P.s;
+  const instances = from <= P.e ? expandSchedules(state.schedules, from, P.e, state.overrides) : [];
   const ids = new Set(instances.map((i) => i.id));
   const Q = (st.transport?.rate || 0) * transportDays(st, P.s, P.e);
   // Movimientos que no entran en A(t): ligados a instancias de este periodo o posteriores, y transporte del periodo.
