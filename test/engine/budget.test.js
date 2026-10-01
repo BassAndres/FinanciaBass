@@ -271,3 +271,12 @@ test('el plan empieza el mismo día del saldo inicial: lo de ese día no se cuen
   assert.equal(d2.todaySpent, 2000);
   assert.equal(d2.disponible, d2.startOfDay - 2000);
 });
+
+test('techo diario de un mes normal', async () => {
+  const { monthOutlook } = await import('../../js/engine/budget.js');
+  const o = monthOutlook(demoState(), '2026-10-05'); // noviembre: 30 días
+  assert.equal(o.days, 30);
+  assert.equal(o.income, 4 * 80000 + 150000 + 1000000);
+  assert.equal(o.fixed, 100000);
+  assert.equal(o.ceiling, Math.floor((o.income - o.fixed - 30 * 2000) / 30));
+});

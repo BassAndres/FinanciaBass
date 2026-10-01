@@ -1,7 +1,7 @@
 import {
   computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday, dateOf, year, month,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, emptyState, balancesAt,
-  reminderEvents, googleCalendarLink, buildICS, describeRule, TRANSPORT_RE, dayHistory,
+  reminderEvents, googleCalendarLink, buildICS, describeRule, TRANSPORT_RE, dayHistory, monthOutlook,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid } from './ui/dom.js';
@@ -69,6 +69,7 @@ function render() {
   }
   dash = computeDashboard(state, t);
   dash.history = dayHistory(state, t, 7);
+  dash.outlook = monthOutlook(state, t);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt(t);
   const route = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';

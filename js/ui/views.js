@@ -119,7 +119,7 @@ function moneyGroup(state, d) {
       return item({
         lead: `<span class="ic ${isRec ? 'hue-ink' : 'hue-gray'}">${icon('card', 18)}</span>`,
         title: `${esc(c.name)}${isRec ? ' <span class="badge">Mejor hoy</span>' : ''}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''}`,
-        meta: isRec ? `Lo que compres hoy lo pagas hasta el ${fmtDate(c.pay.due, false)} (${c.pay.days} días)` : c.pay ? `Pagas lo de hoy hasta el ${fmtDate(c.pay.due, false)} (${c.pay.days} días)` : '',
+        meta: c.pay ? `${isRec ? 'Lo que compres hoy lo pagas' : 'Pagas lo de hoy'} hasta el ${fmtDate(dueToday(d, c), false)} (${daysTo(d, dueToday(d, c))} días)` : '',
         trail: `<span class="trail-col"><b class="amt">${money(room, { decimals: false })}</b><small class="mute">${room ? 'sin pasar 30%' : 'ya pasaste 30%'}</small></span>`,
       });
     }).join('')}</div><p class="foot">Con tarjeta, usa la marcada como "Mejor hoy": te da más días para pagar y no subes tu uso de más del 30%. Tu número de hoy aplica igual en efectivo o tarjeta.</p>` : ''}`);
@@ -176,6 +176,10 @@ export function movsView(state, d) {
     })).join('')}</div>`)).join('') : `<div class="empty">${icon('list', 28)}<p>Aún no hay movimientos en este periodo.</p></div>`}`;
 }
 
+// Fecha en que pagas lo que compres hoy: si ya capturaste el estado de cuenta de ese corte, manda su fecha.
+const dueToday = (d, c) => d.statements.find((s) => s.card === c.id && s.cut && s.cut === c.pay?.cut)?.due || c.pay?.due;
+const daysTo = (d, date) => Math.round((Date.parse(date) - Date.parse(d.today)) / 864e5);
+
 export function tarjetasView(state, d) {
   const stByCard = {};
   for (const s of d.statements) (stByCard[s.card] ||= []).push(s);
@@ -186,7 +190,7 @@ export function tarjetasView(state, d) {
     return `<article class="ccard">
       <div class="ccard-head">
         <div><button type="button" class="ccard-name plain" data-action="acc-edit" data-acc="${esc(c.id)}">${esc(c.name)}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''} ${icon('adjust', 14, 'mute inline')}</button>
-        <p class="ccard-sub">${c.pay ? `Próximo corte ${fmtDate(c.pay.cut, false)} · si compras hoy, lo pagas hasta el ${fmtDate(c.pay.due, false)}` : 'Sin fechas de corte'}</p></div>
+        <p class="ccard-sub">${c.pay ? `Próximo corte ${fmtDate(c.pay.cut, false)} · lo que compres hoy entra en ese corte y lo pagas a más tardar el ${fmtDate(dueToday(d, c), false)}` : 'Sin fechas de corte'}</p></div>
         <p class="ccard-owed">${bigMoney(c.owed)}</p>
       </div>
       ${c.limit ? `<div class="meter ${tone}"><i style="width:${Math.min(100, Math.round((c.util || 0) * 100))}%"></i><span class="meter-mark"></span></div>
@@ -222,6 +226,11 @@ export function planView(state, d) {
     <div><small>Base diaria</small><b>${money(d.base)}</b></div>
     <div><small>Dinero neto hoy</small><b>${money(d.net)}</b></div>
   </div>
+  ${d.outlook ? `<div class="panel pad outlook">
+    <p class="ol-title">${icon('trend', 18)} ¿Sales adelante?</p>
+    <p class="ol-big">${d.outlook.free > 0 ? 'Sí.' : 'Ojo.'} Tu techo es <b>${money(d.outlook.ceiling)}</b> al día</p>
+    <p class="foot top0">En un mes normal te entran ${money(d.outlook.income, { decimals: false })}, tus fijos son ${money(d.outlook.fixed, { decimals: false })} y el transporte ${money(d.outlook.transport, { decimals: false })}. Si en promedio gastas más de ${money(d.outlook.ceiling, { decimals: false })} al día, empiezas a acumular deuda. Gastando ${money(d.outlook.withSavings, { decimals: false })} al día ahorras ${money(d.outlook.savings, { decimals: false })} al mes.</p>
+  </div>` : ''}
   <p class="foot">Dinero neto = efectivo + banco − lo que debes en tarjetas. <button class="link" data-action="rebase">Repartir lo que queda en los días que faltan</button></p>
 
   ${group('Este periodo', `<div class="panel">${d.instances.map((i) => item({

@@ -10,7 +10,7 @@
 // A(t) es N(t) sin los movimientos que ya están ligados a instancias (se cuentan en su "valor") ni el
 // transporte del periodo (se cuenta en la bolsa). Si un día no gastas, ⌊libre·k/D⌋ crece y lo que no
 // usaste se acumula; si gastas de más, el disponible queda negativo hasta que lo recuperas.
-import { addDays, diffDays, weekday, eachDay, maxDate } from './dates.js';
+import { addDays, diffDays, weekday, eachDay, maxDate, dateOf, year, month } from './dates.js';
 import { expandSchedules, instanceDate } from './schedule.js';
 import { periodFor } from './periods.js';
 import { indexAccounts, balancesAt, netOf, liquidOf, txNetEffect, isLiquid } from './ledger.js';
@@ -238,4 +238,22 @@ export function dayHistory(state, today, n = 7) {
     out.push({ date: d, start: x.disponible + x.todaySpent, spent: x.todaySpent, end: x.disponible, base: x.base, closed: d < today });
   }
   return out;
+}
+
+// Un mes normal (el siguiente completo): cuánto entra, cuánto es fijo y tu "techo" diario.
+// Si gastas en promedio más que el techo, empiezas a endeudarte; por debajo, todo lo que sobra es ahorro.
+export function monthOutlook(state, today) {
+  const from = dateOf(year(today), month(today) + 1, 1);
+  const to = dateOf(year(today), month(today) + 1, 'last');
+  const days = diffDays(to, from) + 1;
+  const inst = expandSchedules(state.schedules, from, to, {});
+  const sum = (f) => inst.filter(f).reduce((a, i) => a + i.amount, 0);
+  const income = sum((i) => i.kind === 'income');
+  const fixed = sum((i) => i.kind === 'fixed' || i.kind === 'msi');
+  const savings = sum((i) => i.kind === 'savings');
+  const t = state.settings.transport;
+  let transport = 0;
+  eachDay(from, to, (d) => { if (t?.rate && (!t.weekdays || t.weekdays.includes(weekday(d)))) transport += t.rate; });
+  const free = income - fixed - transport;
+  return { from, to, days, income, fixed, transport, savings, free, ceiling: Math.floor(free / days), withSavings: Math.floor((free - savings) / days) };
 }
