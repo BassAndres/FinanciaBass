@@ -35,7 +35,14 @@ function periodContext(state, P) {
   const ids = new Set(instances.map((i) => i.id));
   const Q = (st.transport?.rate || 0) * transportDays(st, P.s, P.e);
   // Movimientos que no entran en A(t): ligados a instancias de este periodo o posteriores, y transporte del periodo.
-  const isPlanned = (tx) => tx.planRef && !tx.planRef.startsWith('stmt:') && instanceDate(tx.planRef) >= P.s;
+  const schedIds = new Set(state.schedules.map((x) => x.id));
+  const isPlanned = (tx) => {
+    if (!tx.planRef || tx.planRef.startsWith('stmt:')) return false;
+    const d = instanceDate(tx.planRef);
+    if (d < P.s) return false;
+    // Si la regla o la instancia ya no existen, el movimiento cuenta como gasto/ingreso normal.
+    return d <= P.e ? ids.has(tx.planRef) : schedIds.has(tx.planRef.slice(0, tx.planRef.lastIndexOf('@')));
+  };
   // Solo el transporte diario (metro, metrobús…) sale de la bolsa; un Uber o taxi cuenta como gasto normal.
   const isTransport = (tx) => tx.type === 'expense' && tx.cat === TRANSPORT && tx.date >= P.s && tx.date <= P.e && !tx.planRef &&
     (tx.pool === true || (tx.pool !== false && TRANSPORT_RE.test(tx.desc || '')));
@@ -53,9 +60,10 @@ function evalAt(state, ctx, P, t) {
     if (isPlanned(tx)) {
       const eff = txNetEffect(tx, accounts);
       A -= eff;
-      (linked[tx.planRef] ||= { eff: 0, n: 0 });
+      (linked[tx.planRef] ||= { eff: 0, n: 0, auto: true });
       linked[tx.planRef].eff += eff;
       linked[tx.planRef].n++;
+      if (tx.src !== 'auto') linked[tx.planRef].auto = false;
     } else if (isTransport(tx)) {
       A -= txNetEffect(tx, accounts);
       spentT += tx.amount;
@@ -71,7 +79,7 @@ function evalAt(state, ctx, P, t) {
     else if (i.kind === 'income' && diffDays(t, i.date) > grace) { value = 0; s = 'overdue'; }
     else { value = i.signed; s = i.date <= t ? 'due' : 'pending'; }
     values += value;
-    status.push({ ...i, status: s, value });
+    status.push({ ...i, status: s, value, autoOnly: s === 'done' && linked[i.id].auto });
   }
   const pool = -Math.max(Q, spentT);
   return { A, R: A + values + pool, bal, status, spentT, linked };
@@ -117,7 +125,9 @@ export function computeDashboard(state, today) {
   const statements = statementStatus(state, accounts).filter((s) => s.remaining > 0);
   const cards = cardSummaries(state, now.bal, accounts, t);
   const base = Math.floor(libre / D);
-  const liq = liquidity(state, ctx, P, t, { liquid, disponible, base, statements });
+  const dueNow = now.status.filter((i) => i.status === 'due' && i.kind !== 'income' && i.date <= t && isLiquid(accounts[i.account]))
+    .reduce((a, i) => a + i.amount, 0);
+  const liq = liquidity(state, ctx, P, t, { liquid: liquid - dueNow, disponible, base, statements });
   const cardOfDay = recommendCard(cards);
 
   return {
@@ -201,7 +211,7 @@ export function autoPostDue(state, today) {
   const from = state.settings.openingDate ? addDays(state.settings.openingDate, 1) : today;
   if (from > today) return [];
   return expandSchedules(auto, from, today, state.overrides)
-    .filter((i) => !done.has(i.id) && !i.skipped)
+    .filter((i) => i.autoPost && !done.has(i.id) && !i.skipped)
     .map((i) => instanceToTx(i, i.date, 'auto'));
 }
 

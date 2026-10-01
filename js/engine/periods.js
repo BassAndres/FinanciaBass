@@ -11,7 +11,9 @@ export function periodFor(settings, date) {
   let s = day(date) >= lastDayOfMonth(y, m) ? dateOf(y, m, 'last') : dateOf(y, m - 1, 'last');
   const minStart = addDays(firstEnd, 1);
   if (s < minStart) s = minStart;
-  const e = addDays(dateOf(year(s), month(s) + 1, 'last'), -1);
+  // Si el periodo empieza a medio mes (el primero terminó antes), se cierra un día antes del siguiente día de pago.
+  const monthEnd = dateOf(year(s), month(s), 'last');
+  const e = s !== monthEnd && addDays(monthEnd, -1) >= s ? addDays(monthEnd, -1) : addDays(dateOf(year(s), month(s) + 1, 'last'), -1);
   return { s, e, first: false, notStarted: false, D: diffDays(e, s) + 1 };
 }
 

@@ -55,7 +55,9 @@ export function matchInstance(instances, tx) {
   if (tx.type !== 'income' && tx.type !== 'expense') return null;
   let best = null, bestScore = 0;
   for (const i of instances) {
-    if (i.status === 'done' || i.status === 'skipped') continue;
+    if (i.status === 'skipped') continue;
+    // Un cargo ya registrado en automático puede ser reemplazado por el real (p. ej. la notificación del banco).
+    if (i.status === 'done' && !(i.autoOnly && !wantIncome)) continue;
     if (wantIncome ? i.kind !== 'income' : i.kind !== 'fixed' && i.kind !== 'msi') continue;
     if (Math.abs(i.amount - tx.amount) > Math.max(100, i.amount * 0.15)) continue;
     const dd = diffDays(tx.date, i.date);
@@ -64,7 +66,9 @@ export function matchInstance(instances, tx) {
     const words = norm(i.name).split(/[^a-z0-9]+/).filter((w) => w.length > 2);
     const nameHit = words.some((w) => norm(tx.desc).includes(w));
     const exact = i.amount === tx.amount;
-    if (!sameAcc && !nameHit && !exact) continue;
+    // Gastos: tiene que coincidir el nombre, o el monto exacto en la misma tarjeta. Así un súper de $900 no se
+    // confunde con una suscripción de $1,000. Ingresos: basta la cuenta, el nombre o el monto exacto.
+    if (wantIncome ? !sameAcc && !nameHit && !exact : !nameHit && !(exact && sameAcc)) continue;
     const score = (sameAcc ? 2 : 0) + (nameHit ? 3 : 0) + (exact ? 1 : 0) - Math.abs(dd) / 100;
     if (score > bestScore) { best = i; bestScore = score; }
   }

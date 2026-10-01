@@ -170,7 +170,10 @@ export function scheduleSheet(s) {
         : v.freq === 'once' ? { type: 'once', date: v.date }
           : { type: 'monthly', day, ...(v.freq === 'bimonthly' ? { every: 2, anchor: s.rule.anchor || dateOf(year(t), month(t), 1) } : {}) };
       const changedRule = !isNew && (JSON.stringify(rule) !== JSON.stringify(s.rule) || amount !== s.amount || v.account !== s.account);
-      const next = { ...s, name: v.name.trim(), kind: v.kind, amount, account: v.account, rule, autoPost: !!v.autoPost, end: v.end || undefined,
+      const autoPost = ['fixed', 'msi'].includes(v.kind) && !!v.autoPost;
+      const next = { ...s, name: v.name.trim(), kind: v.kind, amount, account: v.account, rule, autoPost, end: v.end || undefined,
+        // Al activar "se cobra solo" no se registran meses pasados (ya están en tus saldos).
+        autoSince: autoPost ? (s.autoPost ? s.autoSince : t) : undefined,
         to: v.kind === 'savings' ? (s.to || ctx.firstOf('savings')) : undefined, start: isNew ? t : s.start };
       ctx.commit((st) => {
         // Si cambia monto, día o cuenta: lo pasado (ya registrado) queda igual y lo nuevo aplica desde hoy.
@@ -179,8 +182,9 @@ export function scheduleSheet(s) {
           const lastDone = st.tx.filter((x) => x.planRef?.startsWith(`${s.id}@`)).map((x) => x.planRef.split('@')[1]).sort().pop();
           old.end = lastDone;
           // La regla nueva empieza después del último registrado (mes siguiente si es mensual) para no duplicar.
+          // Lo pendiente de este mes (si no estaba pagado) se vuelve a crear con los datos nuevos.
           const after = rule.type === 'monthly' ? dateOf(year(lastDone), month(lastDone) + 1, 1) : addDays(lastDone, 1);
-          st.schedules.push({ ...next, id: uid(), start: after > t ? after : t });
+          st.schedules.push({ ...next, id: uid(), start: after });
         } else {
           const i = st.schedules.findIndex((x) => x.id === s.id);
           if (i >= 0) st.schedules[i] = next; else st.schedules.push(next);
@@ -205,7 +209,13 @@ export function instanceSheet(inst) {
         const a = e.target.closest('[data-a]')?.dataset.a;
         if (a === 'edit') ctx.editTx(tx.id);
         else if (a === 'rule') scheduleSheet(st.schedules.find((x) => x.id === inst.schedId));
-        else if (a === 'undo') { closeSheet(); ctx.commit((s) => { s.tx = s.tx.filter((x) => x.planRef !== inst.id); }, 'Listo, vuelve a estar pendiente', true); }
+        else if (a === 'undo') {
+          closeSheet();
+          ctx.commit((s) => {
+            s.tx = s.tx.filter((x) => x.planRef !== inst.id);
+            s.overrides[inst.id] = { ...(s.overrides[inst.id] || {}), noAuto: true }; // que no se vuelva a registrar solo
+          }, 'Listo, vuelve a estar pendiente', true);
+        }
       };
     });
     return;

@@ -170,3 +170,60 @@ test('registrar a mano algo planeado se liga y no se cuenta doble', () => {
   const sub = tx({ type: 'expense', account: 'tb', amount: 100000, date: '2026-10-15', desc: 'Suscripción', cat: 'suscripciones' });
   assert.equal(matchInstance(d1.instances, sub)?.id, 'fijo@2026-10-15');
 });
+
+// ---- Regresiones de la revisión ----
+test('un gasto normal parecido a un fijo NO se liga (súper $900 vs suscripción $1,000)', () => {
+  const s = demoState();
+  const d = computeDashboard(s, '2026-10-13');
+  assert.equal(matchInstance(d.instances, { type: 'expense', account: 'ta', amount: 90000, date: '2026-10-13', desc: 'Super', cat: 'comida' }), null);
+  assert.equal(matchInstance(d.instances, { type: 'expense', account: 'ta', amount: 100000, date: '2026-10-15', desc: '' })?.id, 'fijo@2026-10-15');
+});
+
+test('borrar un cargo automático no lo vuelve a registrar', () => {
+  const s = demoState();
+  s.schedules[2].autoPost = true;
+  assert.equal(autoPostDue(s, '2026-10-16').length, 1);
+  s.overrides['fijo@2026-10-15'] = { noAuto: true };
+  assert.equal(autoPostDue(s, '2026-10-16').length, 0);
+  assert.ok(computeDashboard(s, '2026-10-16').prompts.some((p) => p.id === 'fijo@2026-10-15'));
+});
+
+test('activar "se cobra solo" no registra meses pasados', () => {
+  const s = demoState();
+  s.settings.openingDate = '2026-07-01';
+  Object.assign(s.schedules[2], { autoPost: true, autoSince: '2026-10-10' });
+  assert.deepEqual(autoPostDue(s, '2026-10-20').map((x) => x.planRef), ['fijo@2026-10-15']);
+});
+
+test('eliminar una regla ya pagada: el pago cuenta como gasto normal', () => {
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'ta', amount: 100000, date: '2026-10-15', planRef: 'fijo@2026-10-15' }));
+  s.schedules = s.schedules.filter((x) => x.id !== 'fijo');
+  const ref = demoState();
+  ref.schedules = ref.schedules.filter((x) => x.id !== 'fijo');
+  ref.tx.push(tx({ type: 'expense', account: 'ta', amount: 100000, date: '2026-10-15' }));
+  assert.equal(disp(s, '2026-10-16'), disp(ref, '2026-10-16'));
+});
+
+test('un cargo real reemplaza al automático (notificación del banco)', () => {
+  const s = demoState();
+  s.schedules[2].autoPost = true;
+  for (const p of autoPostDue(s, '2026-10-15')) s.tx.push({ id: 'auto1', ...p });
+  const d = computeDashboard(s, '2026-10-15');
+  assert.equal(matchInstance(d.instances, { type: 'expense', account: 'ta', amount: 100000, date: '2026-10-15', desc: 'Suscripción' })?.id, 'fijo@2026-10-15');
+});
+
+test('periodo puente si el primero termina a medio mes', async () => {
+  const { periodFor } = await import('../../js/engine/periods.js');
+  const st = { firstStart: '2026-10-01', firstEnd: '2026-10-20' };
+  assert.deepEqual([periodFor(st, '2026-10-25').s, periodFor(st, '2026-10-25').e], ['2026-10-21', '2026-10-30']);
+  assert.deepEqual([periodFor(st, '2026-10-31').s, periodFor(st, '2026-10-31').e], ['2026-10-31', '2026-11-29']);
+});
+
+test('liquidez: un fijo de la cuenta que vence hoy y no se ha pagado sí cuenta', () => {
+  const s = demoState();
+  s.schedules.push({ id: 'renta', kind: 'fixed', name: 'Renta', amount: 400000, account: 'banco', rule: { type: 'monthly', day: 12 } });
+  const a = computeDashboard(s, '2026-10-11').liquidity.min;
+  const b = computeDashboard(s, '2026-10-12').liquidity.min;
+  assert.ok(b <= a + 10000, `${a} → ${b}`);
+});

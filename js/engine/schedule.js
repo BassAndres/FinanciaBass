@@ -36,7 +36,7 @@ export function expandSchedules(schedules, from, to, overrides = {}) {
       out.push({
         id, schedId: s.id, date: ov.date || date, nominal: date, name: s.name, kind: s.kind,
         account: s.account, to: s.to, amount, signed: signOf(s.kind) * amount,
-        skipped: ov.status === 'skipped', autoPost: !!s.autoPost,
+        skipped: ov.status === 'skipped', autoPost: !!s.autoPost && !ov.noAuto && (!s.autoSince || date >= s.autoSince),
       });
     }
   }

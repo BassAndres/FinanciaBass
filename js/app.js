@@ -35,7 +35,11 @@ function addTx(s, tx) {
   if (full.planRef === 'none') delete full.planRef;
   else if (!full.planRef && dash) {
     const m = matchInstance(dash.instances, full);
-    if (m) { full.planRef = m.id; lastLink = m; }
+    if (m) {
+      full.planRef = m.id; lastLink = m;
+      // Si ya estaba registrado en automático, el cargo real lo reemplaza.
+      if (m.status === 'done') s.tx = s.tx.filter((x) => !(x.planRef === m.id && x.src === 'auto'));
+    }
   }
   s.tx.push(full);
   return full;
@@ -124,7 +128,12 @@ function paintEntry() {
         paintEntry();
       } else if (act === 'save') saveEntry();
       else if (act === 'delete') {
-        commit((s) => { s.tx = s.tx.filter((t) => t.id !== draft.id && t.group !== draft.id); }, 'Movimiento borrado', true);
+        commit((s) => {
+          const gone = s.tx.find((t) => t.id === draft.id);
+          s.tx = s.tx.filter((t) => t.id !== draft.id && t.group !== draft.id);
+          // Un cargo automático borrado no se vuelve a registrar solo; queda como pendiente.
+          if (gone?.planRef && gone.src === 'auto') s.overrides[gone.planRef] = { ...(s.overrides[gone.planRef] || {}), noAuto: true };
+        }, 'Movimiento borrado', true);
         closeSheet();
       }
     };
@@ -151,13 +160,14 @@ function saveEntry() {
     tx = { ...base, type: 'adjust', account: draft.account, amount: real - current, desc: 'Ajuste: saldo real' };
     if (!tx.amount) { closeSheet(); return toast('El saldo ya coincide'); }
   }
-  if (draft.planRef) tx.planRef = draft.planRef;
+  if (draft.planRef && draft.planRef !== 'none') tx.planRef = draft.planRef;
   const editing = draft.id;
   commit((s) => {
     s.settings.lastAccount = { ...(s.settings.lastAccount || {}), [draft.type]: draft.account };
     if (editing) {
       const i = s.tx.findIndex((t) => t.id === editing);
       s.tx[i] = { ...s.tx[i], ...tx, review: false };
+      if (draft.planRef === 'none' || !draft.planRef) delete s.tx[i].planRef;
     } else {
       const saved = addTx(s, tx);
       const refund = draft.type === 'expense' ? parseAmount(draft.refund) : 0;
@@ -247,7 +257,7 @@ const actions = {
   fares: () => faresSheet(),
   period: () => periodSheet(),
   'inst-skip': (el) => commit((s) => { s.overrides[el.dataset.id] = { ...(s.overrides[el.dataset.id] || {}), status: 'skipped' }; }, 'Marcado como saltado', true),
-  'inst-unskip': (el) => commit((s) => { delete s.overrides[el.dataset.id]; }),
+  'inst-unskip': (el) => commit((s) => { const o = { ...(s.overrides[el.dataset.id] || {}) }; delete o.status; s.overrides[el.dataset.id] = o; }),
   'leftover-save'() {
     const l = dash.leftover;
     commit((s) => { addTx(s, { type: 'transfer', account: firstOf('bank'), to: firstOf('savings'), amount: l.amount, date: l.date, cat: 'ahorro', desc: 'Sobrante del periodo' }); s.dismissed[l.key] = true; }, `${money(l.amount)} a tu alcancía`, true);
