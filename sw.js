@@ -1,5 +1,5 @@
 // Service worker: guarda la app para que abra sin internet. Sube VERSION cuando cambie algún archivo.
-const VERSION = 'fb-v11';
+const VERSION = 'fb-v12';
 const FILES = [
   './',
   './index.html',

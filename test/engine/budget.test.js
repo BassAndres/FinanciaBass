@@ -280,3 +280,12 @@ test('techo diario de un mes normal', async () => {
   assert.equal(o.fixed, 100000);
   assert.equal(o.ceiling, Math.floor((o.income - o.fixed - 30 * 2000) / 30));
 });
+
+test('migración v3: la fecha límite de un saldo antes del corte sale de la tarjeta', async () => {
+  const { migrate } = await import('../../js/engine/state.js');
+  const s = demoState();
+  s.schema = 2;
+  s.statements = [{ id: 'sc', card: 'tc', amount: 300000, due: '2026-11-01', createdAt: '2026-09-30', beforeCut: true }];
+  const m = migrate(JSON.parse(JSON.stringify(s)));
+  assert.equal(m.statements[0].due, '2026-11-09'); // Tarjeta C: corte 19-oct, pago día 8 → dom 8-nov → lun 9-nov
+});

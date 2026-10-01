@@ -1,5 +1,7 @@
 // Forma de los datos guardados y migraciones entre versiones.
-export const SCHEMA = 2;
+import { nextCut, dueForCut } from './cards.js';
+
+export const SCHEMA = 3;
 
 export function emptyState(today) {
   return {
@@ -33,6 +35,15 @@ const MIGRATIONS = {
   2: (s) => ({
     ...s,
     statements: (s.statements || []).map((st) => (!st.payFrom && st.createdAt === s.settings?.openingDate ? { ...st, beforeCut: true } : st)),
+  }),
+  // v3: la fecha límite de esos saldos sale del corte y día de pago de la tarjeta (no de una fecha capturada a mano).
+  3: (s) => ({
+    ...s,
+    statements: (s.statements || []).map((st) => {
+      const card = (s.accounts || []).find((a) => a.id === st.card);
+      if (!st.beforeCut || st.createdAt !== s.settings?.openingDate || !card?.cutDay) return st;
+      return { ...st, due: dueForCut(card, nextCut(card, st.createdAt)) };
+    }),
   }),
 };
 
