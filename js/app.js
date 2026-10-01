@@ -1,12 +1,16 @@
 import {
   computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday, dateOf, year, month,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, emptyState, balancesAt,
-  reminderEvents, googleCalendarLink, buildICS, describeRule,
+  reminderEvents, googleCalendarLink, buildICS, describeRule, TRANSPORT_RE,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid } from './ui/dom.js';
 import { hoyView, movsView, tarjetasView, planView, masView, onboardingView, entrySheet } from './ui/views.js';
 import { icon } from './ui/icons.js';
+import {
+  initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
+  faresSheet, periodSheet, breakdownSheet,
+} from './ui/editors.js';
 
 let state = store.load();
 let dash = null;
@@ -23,11 +27,15 @@ function commit(fn, msg, undoable = false) {
   if (msg) toast(msg, undoable ? { label: 'Deshacer', fn: () => { state = JSON.parse(before); store.save(state); render(); } } : null);
 }
 
+// Guarda un movimiento. Si corresponde a algo planeado (TotalPass, el dinero de mamá…) lo liga para no contarlo doble.
+let lastLink = null;
 function addTx(s, tx) {
   const full = { id: uid(), ts: Date.now(), src: 'manual', ...tx };
-  if (!full.planRef && full.type === 'expense' && dash) {
+  lastLink = null;
+  if (full.planRef === 'none') delete full.planRef;
+  else if (!full.planRef && dash) {
     const m = matchInstance(dash.instances, full);
-    if (m) full.planRef = m.id;
+    if (m) { full.planRef = m.id; lastLink = m; }
   }
   s.tx.push(full);
   return full;
@@ -83,11 +91,19 @@ function openEntry(d) {
 function defaultAccount(type) {
   const last = state.settings.lastAccount?.[type];
   if (last && state.accounts.some((a) => a.id === last)) return last;
-  return type === 'expense' ? (state.settings.transport?.account || firstOf('cash')) : firstOf('bank') || firstOf('cash');
+  return type === 'expense' ? firstOf('cash') || firstOf('bank') : firstOf('bank') || firstOf('cash');
+}
+
+// Cosas planeadas que este movimiento podría ser (para no contarlas doble).
+function planCandidates() {
+  if (!dash || (draft.type !== 'expense' && draft.type !== 'income')) return [];
+  const kinds = draft.type === 'income' ? ['income'] : ['fixed', 'msi'];
+  return dash.instances.filter((i) => kinds.includes(i.kind) && (i.id === draft.planRef || (i.status !== 'done' && i.status !== 'skipped'))
+    && Math.abs((Date.parse(i.date) - Date.parse(draft.date || today())) / 864e5) <= 10).slice(0, 5);
 }
 
 function paintEntry() {
-  openSheet(entrySheet(state, draft), (body) => {
+  openSheet(entrySheet(state, draft, planCandidates()), (body) => {
     body.onclick = (e) => {
       const k = e.target.closest('[data-key]')?.dataset.key;
       const pick = e.target.closest('[data-pick]');
@@ -100,6 +116,10 @@ function paintEntry() {
         body.querySelector('.amount-display .num').textContent = draft.amountText || '0';
       } else if (pick) {
         draft[pick.dataset.pick] = pick.dataset.val;
+        if (pick.dataset.pick === 'planRef' && pick.dataset.val !== 'none') {
+          const i = dash.instances.find((x) => x.id === pick.dataset.val);
+          if (i) { draft.amountText ||= String(i.amount / 100); draft.desc ||= i.name; draft.account = i.account; }
+        }
         if (pick.dataset.pick === 'type') { draft.account = defaultAccount(draft.type); draft.to = draft.type === 'pay' ? firstOf('card') : null; }
         paintEntry();
       } else if (act === 'save') saveEntry();
@@ -109,6 +129,7 @@ function paintEntry() {
       }
     };
     body.oninput = (e) => { const f = e.target.dataset.field; if (f) draft[f] = e.target.value; };
+    body.onchange = (e) => { if (e.target.dataset.field === 'date') paintEntry(); };
   });
 }
 
@@ -118,7 +139,7 @@ function saveEntry() {
   if (!draft.account) return toast('Elige la cuenta');
   const base = { date: draft.date || today(), desc: (draft.desc || '').trim() };
   let tx;
-  if (draft.type === 'expense') tx = { ...base, type: 'expense', account: draft.account, amount, cat: draft.cat || 'otros' };
+  if (draft.type === 'expense') tx = { ...base, type: 'expense', account: draft.account, amount, cat: draft.cat || 'otros', ...(draft.pool != null ? { pool: draft.pool } : {}) };
   else if (draft.type === 'income') tx = { ...base, type: 'income', account: draft.account, amount, cat: 'ingreso' };
   else if (draft.type === 'pay' || draft.type === 'transfer') {
     if (!draft.to) return toast('Elige a dónde va');
@@ -137,8 +158,16 @@ function saveEntry() {
       const i = s.tx.findIndex((t) => t.id === editing);
       s.tx[i] = { ...s.tx[i], ...tx, review: false };
     } else addTx(s, tx);
-  }, editing ? 'Cambios guardados' : `Registrado ${money(amount || 0)}`, true);
+  }, editing ? 'Cambios guardados' : savedMsg(tx), true);
   closeSheet();
+}
+
+function savedMsg(tx) {
+  if (lastLink) return `${money(tx.amount)} · lo tomé como ${lastLink.name} (ya estaba apartado)`;
+  if (tx.type === 'expense' && tx.cat === 'transporte' && (tx.pool === true || (tx.pool !== false && TRANSPORT_RE.test(tx.desc || '')))) return `${money(tx.amount)} · sale de tu apartado de transporte`;
+  if (tx.type === 'expense') return `${money(tx.amount)} menos para hoy`;
+  if (tx.type === 'income') return `+${money(tx.amount)} registrado`;
+  return `${money(tx.amount || 0)} registrado`;
 }
 
 function editTx(id) {
@@ -147,61 +176,6 @@ function editTx(id) {
   const type = t.type === 'transfer' ? (state.accounts.find((a) => a.id === t.to)?.type === 'card' ? 'pay' : 'transfer') : t.type;
   const amountText = t.type === 'adjust' ? String(((balancesAt(state, t.date)[t.account]) || 0) / 100) : String(t.amount / 100);
   openEntry({ ...t, type, amountText });
-}
-
-// ---------- hojas pequeñas ----------
-function formSheet(title, fields, onSave, extra = '') {
-  openSheet(`<h2>${esc(title)}</h2><div class="panel">${fields.map((f) => `<label class="item"><span class="item-body"><span class="item-title">${esc(f.label)}</span></span>${
-    f.options ? `<select name="${f.name}">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(f.value) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
-      : `<input name="${f.name}" type="${f.type || 'text'}" ${f.type === 'number' ? 'inputmode="decimal" step="0.01"' : ''} value="${esc(f.value ?? '')}" ${f.type === 'checkbox' && f.value ? 'checked' : ''}>`}</label>`).join('')}
-    </div><button type="button" class="btn wide lg" data-sheet-action="ok">Guardar</button>${extra}`, (body) => {
-    body.onclick = (e) => {
-      const act = e.target.closest('[data-sheet-action]')?.dataset.sheetAction;
-      if (!act) return;
-      const vals = Object.fromEntries([...body.querySelectorAll('[name]')].map((el) => [el.name, el.type === 'checkbox' ? el.checked : el.value]));
-      if (onSave(act, vals) !== false) closeSheet();
-    };
-  });
-}
-
-function scheduleSheet(s) {
-  const isNew = !s;
-  s = s || { id: uid(), kind: 'fixed', name: '', amount: 0, account: firstOf('bank'), rule: { type: 'monthly', day: 1 } };
-  const accOpts = state.accounts.filter((a) => !a.archived).map((a) => [a.id, a.name]);
-  const ruleVal = s.rule.type === 'weekly' ? 'weekly' : (s.rule.every || 1) === 2 ? 'bimonthly' : 'monthly';
-  formSheet(isNew ? 'Nuevo ingreso o gasto fijo' : `Editar: ${s.name}`, [
-    { name: 'name', label: 'Nombre', value: s.name },
-    { name: 'kind', label: 'Tipo', value: s.kind, options: [['income', 'Ingreso'], ['fixed', 'Gasto fijo'], ['msi', 'Meses sin intereses'], ['savings', 'Ahorro (a la alcancía)']] },
-    { name: 'amount', label: 'Monto', type: 'number', value: s.amount / 100 },
-    { name: 'account', label: 'Cuenta / tarjeta', value: s.account, options: accOpts },
-    { name: 'freq', label: 'Frecuencia', value: ruleVal, options: [['monthly', 'Cada mes'], ['bimonthly', 'Cada 2 meses'], ['weekly', 'Cada semana']] },
-    { name: 'day', label: 'Día (1–31, "last" o día de la semana 0=dom…6=sáb)', value: s.rule.type === 'weekly' ? s.rule.weekday : s.rule.day },
-    { name: 'autoPost', label: 'Se cobra solo (registrarlo automático)', type: 'checkbox', value: s.autoPost },
-    { name: 'end', label: 'Termina (opcional)', type: 'date', value: s.end || '' },
-  ], (act, v) => {
-    if (act === 'archive') { commit((st) => { st.schedules = st.schedules.filter((x) => x.id !== s.id); }, 'Eliminado', true); return; }
-    const amount = parseAmount(v.amount);
-    if (!v.name || !amount) { toast('Pon nombre y monto'); return false; }
-    const day = v.day === 'last' ? 'last' : Number(v.day);
-    const rule = v.freq === 'weekly' ? { type: 'weekly', weekday: Math.min(6, Math.max(0, day | 0)) }
-      : { type: 'monthly', day: day === 'last' ? 'last' : Math.min(31, Math.max(1, day | 0)), ...(v.freq === 'bimonthly' ? { every: 2, anchor: s.rule.anchor || dateOf(year(today()), month(today()), 1) } : {}) };
-    const next = { ...s, name: v.name, kind: v.kind, amount, account: v.account, rule, autoPost: !!v.autoPost, end: v.end || undefined,
-      to: v.kind === 'savings' ? (s.to || firstOf('savings')) : undefined, start: s.start || (isNew ? today() : undefined) };
-    commit((st) => { const i = st.schedules.findIndex((x) => x.id === s.id); if (i >= 0) st.schedules[i] = next; else st.schedules.push(next); }, 'Guardado', true);
-  }, isNew ? '' : `<button type="button" class="btn ghost danger wide" data-sheet-action="archive">${icon('trash', 18)}Eliminar</button>`);
-}
-
-function statementSheet(card) {
-  const acc = state.accounts.find((a) => a.id === card);
-  formSheet(`Estado de cuenta · ${acc.name}`, [
-    { name: 'amount', label: 'Pago para no generar intereses', type: 'number' },
-    { name: 'due', label: 'Fecha límite de pago', type: 'date' },
-    { name: 'payFrom', label: '¿Desde cuándo se puede pagar? (opcional)', type: 'date' },
-  ], (act, v) => {
-    const amount = parseAmount(v.amount);
-    if (!amount || !v.due) { toast('Pon monto y fecha límite'); return false; }
-    commit((s) => { s.statements.push({ id: uid(), card, amount, due: v.due, payFrom: v.payFrom || undefined, createdAt: today() }); }, 'Estado de cuenta guardado', true);
-  });
 }
 
 // ---------- archivos ----------
@@ -240,7 +214,8 @@ const actions = {
   fare(el) {
     const f = state.settings.fares[Number(el.dataset.i)];
     const account = state.settings.transport?.account || defaultAccount('expense');
-    commit((s) => addTx(s, { type: 'expense', account, amount: f.amount, cat: 'transporte', desc: f.name, date: today() }), `${f.name} ${money(f.amount)} registrado`, true);
+    commit((s) => addTx(s, { type: 'expense', account, amount: f.amount, cat: 'transporte', desc: f.name, date: today(), pool: true }),
+      `${f.name} ${money(f.amount)} · sale de tu apartado de transporte`, true);
   },
   new: (el) => openEntry({ cat: el.dataset.cat }),
   pay: (el) => openEntry({ type: 'pay', to: el.dataset.card, amountText: el.dataset.amount ? String(Number(el.dataset.amount) / 100) : '' }),
@@ -252,11 +227,15 @@ const actions = {
     const date = i.kind === 'income' ? today() : (i.date <= today() ? i.date : today());
     commit((s) => addTx(s, instanceToTx(i, date)), `${i.name}: registrado`, true);
   },
-  'inst-other'(el) {
-    const i = dash.instances.find((x) => x.id === el.dataset.id);
-    const tx = instanceToTx(i, today());
-    openEntry({ type: tx.type === 'transfer' ? 'transfer' : tx.type, account: tx.account, to: tx.to, cat: tx.cat, desc: tx.desc, planRef: i.id, amountText: String(i.amount / 100) });
-  },
+  'inst-open': (el) => instanceSheet(dash.instances.find((x) => x.id === el.dataset.id)),
+  breakdown: () => breakdownSheet(dash),
+  'acc-list': () => accountsList(),
+  'acc-edit': (el) => accountSheet(state.accounts.find((a) => a.id === el.dataset.acc)),
+  'sched-list': () => schedulesList(),
+  'stmt-list': () => statementsList(),
+  'stmt-edit': (el) => { const st = state.statements.find((x) => x.id === el.dataset.id); statementSheet(st.card, st); },
+  fares: () => faresSheet(),
+  period: () => periodSheet(),
   'inst-skip': (el) => commit((s) => { s.overrides[el.dataset.id] = { ...(s.overrides[el.dataset.id] || {}), status: 'skipped' }; }, 'Marcado como saltado', true),
   'inst-unskip': (el) => commit((s) => { delete s.overrides[el.dataset.id]; }),
   'leftover-save'() {
@@ -337,7 +316,7 @@ document.addEventListener('change', async (e) => {
   }
 });
 
-window.addEventListener('hashchange', render);
+window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') render(); });
 
 // ---------- entrada por URL (atajos, MacroDroid, compartir) ----------
@@ -374,6 +353,9 @@ function handleIntents() {
 }
 
 // ---------- arranque ----------
+initEditors({
+  get state() { return state; }, commit, today, firstOf, addTx, editTx,
+});
 document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon, Number(el.dataset.size) || 22); });
 $('#fab').onclick = () => (state ? openEntry({}) : null);
 render();

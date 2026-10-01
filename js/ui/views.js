@@ -47,8 +47,8 @@ export function hoyView(state, d) {
   return `
   <header class="top"><p class="eyebrow">${fmtDate(d.today)}</p><h1>Tu día</h1></header>
 
-  <section class="hero ${heroTone(d)}">
-    <p class="hero-label">${P.notStarted ? `Tu plan empieza el ${fmtDate(P.s)}` : 'Hoy puedes gastar'}</p>
+  <section class="hero ${heroTone(d)}" data-action="breakdown" role="button" tabindex="0" aria-label="Ver cómo se calcula">
+    <p class="hero-label">${P.notStarted ? `Tu plan empieza el ${fmtDate(P.s)}` : 'Hoy puedes gastar'}<span class="hero-info">${icon('info', 16)}</span></p>
     <p class="hero-amount">${bigMoney(d.safeToSpend)}</p>
     ${d.disponible < 0 ? `<p class="hero-note">Vas ${money(d.disponible)} abajo${d.recovery ? `. Si ya no gastas, te recuperas el ${fmtDate(d.recovery)}.` : '.'}</p>` : ''}
     ${d.safeToSpend < d.disponible ? `<p class="hero-note">Llevas ${money(d.disponible)} acumulado; te muestro menos para que alcance a tus pagos.</p>` : ''}
@@ -75,6 +75,8 @@ export function hoyView(state, d) {
   ${d.leftover ? `<div class="notice good">${icon('savings')}<p><b>Te sobraron ${money(d.leftover.amount)} el periodo pasado.</b> ¿Los mandas a tu alcancía?</p>
     <div class="notice-actions"><button class="btn sm" data-action="leftover-save">Sí, guardar</button><button class="btn sm ghost" data-action="leftover-keep">Dejarlos</button></div></div>` : ''}
 
+  ${todayGroup(state, d)}
+
   ${d.prompts.length ? group('Pendientes', `<div class="panel">${d.prompts.map((i) => promptRow(state, i)).join('')}</div>`) : ''}
 
   ${review.length ? group('Por revisar', `<div class="panel">${review.map((t) => item({
@@ -97,16 +99,28 @@ export function hoyView(state, d) {
   `;
 }
 
+function todayGroup(state, d) {
+  const txs = [...d.todayTx].sort((a, b) => (b.ts || 0) - (a.ts || 0));
+  if (!txs.length) return group('Hoy', `<div class="panel"><div class="item"><span class="ic hue-gray">${icon('list', 18)}</span><span class="item-body"><span class="item-title">Aún no registras gastos hoy</span><span class="item-meta">Usa los botones de arriba o el + para registrar</span></span></div></div>`);
+  return group('Hoy', `<div class="panel">${txs.map((t) => item({
+    action: `data-action="edit-tx" data-id="${t.id}"`,
+    lead: badge(t.planned ? 'fijo' : t.cat),
+    title: esc(t.desc || catMeta(t.cat).label),
+    meta: `${esc(accName(state, t.account))}${t.pooled ? ' · del apartado de transporte' : t.planned ? ' · ya estaba apartado' : ''}`,
+    trail: `<b class="amt ${t.pooled || t.planned ? 'mute' : ''}">${money(-t.amount)}</b>`,
+  })).join('')}</div>`, `<span class="group-sum">${d.todaySpent ? `−${money(d.todaySpent)} de tu número` : ''}</span>`);
+}
+
 function promptRow(state, i) {
   const q = i.kind === 'income'
     ? (i.status === 'overdue' ? `¿Llegó ${esc(i.name)}?` : `¿Ya llegó ${esc(i.name)}?`)
     : i.kind === 'savings' ? `¿Apartaste ${esc(i.name)}?` : `¿Ya se cobró ${esc(i.name)}?`;
   const lead = badge(i.kind === 'income' ? 'ingreso' : i.kind === 'savings' ? 'ahorro' : i.kind === 'msi' ? 'msi' : 'fijo');
-  return `<div class="item stack">${lead}<span class="item-body"><span class="item-title">${q}</span>
+  return `<div class="item stack">${lead}<span class="item-body"><button type="button" class="item-title plain" data-action="inst-open" data-id="${esc(i.id)}">${q} ${icon('chevron', 14, 'mute inline')}</button>
     <span class="item-meta">${money(i.amount)} · ${esc(accName(state, i.account))} · ${fmtDate(i.date)}${i.status === 'overdue' ? ' · no lo cuento hasta que llegue' : ''}</span>
     <span class="pair">
       <button class="btn sm" data-action="inst-yes" data-id="${esc(i.id)}">Sí</button>
-      <button class="btn sm ghost" data-action="inst-other" data-id="${esc(i.id)}">Otra cantidad</button>
+      <button class="btn sm ghost" data-action="inst-open" data-id="${esc(i.id)}">Otra cantidad</button>
       <button class="btn sm ghost" data-action="inst-skip" data-id="${esc(i.id)}">${i.kind === 'income' ? 'No llegó' : 'Saltar'}</button>
     </span></span></div>`;
 }
@@ -139,13 +153,13 @@ export function tarjetasView(state, d) {
     const tone = c.util == null ? '' : c.util <= 0.3 ? 'ok' : c.util <= 0.5 ? 'warn' : 'bad';
     return `<article class="ccard">
       <div class="ccard-head">
-        <div><p class="ccard-name">${esc(c.name)}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''}</p>
+        <div><button type="button" class="ccard-name plain" data-action="acc-edit" data-acc="${esc(c.id)}">${esc(c.name)}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''} ${icon('adjust', 14, 'mute inline')}</button>
         <p class="ccard-sub">${c.pay ? `Corte ${fmtDate(c.pay.cut, false)} · lo que compres hoy lo pagas el ${fmtDate(c.pay.due)}` : 'Sin fechas de corte'}</p></div>
         <p class="ccard-owed">${bigMoney(c.owed)}</p>
       </div>
       ${c.limit ? `<div class="meter ${tone}"><i style="width:${Math.min(100, Math.round((c.util || 0) * 100))}%"></i><span class="meter-mark"></span></div>
       <p class="ccard-sub">Usas ${pct(c.util || 0)} de ${money(c.limit, { decimals: false })}${c.msi ? ` · incluye ${money(c.msi)} a meses` : ''}</p>` : ''}
-      ${(stByCard[c.id] || []).map((s) => `<div class="due">${icon('calendar', 18)}<p>Pago para no generar intereses <b>${money(s.remaining)}</b> antes del ${fmtDate(s.due)}${s.payFrom && s.payFrom > d.today ? `. Se puede pagar desde el ${fmtDate(s.payFrom)}` : ''}${s.paid ? `. Ya abonaste ${money(s.paid)}` : ''}</p></div>`).join('')}
+      ${(stByCard[c.id] || []).map((s) => `<div class="due" data-action="stmt-edit" data-id="${esc(s.id)}" role="button">${icon('calendar', 18)}<p>Pago para no generar intereses <b>${money(s.remaining)}</b> antes del ${fmtDate(s.due)}${s.payFrom && s.payFrom > d.today ? `. Se puede pagar desde el ${fmtDate(s.payFrom)}` : ''}${s.paid ? `. Ya abonaste ${money(s.paid)}` : ''}</p></div>`).join('')}
       <div class="ccard-actions">
         <button class="btn sm" data-action="pay" data-card="${esc(c.id)}">${icon('pay', 16)}Pagar</button>
         <button class="btn sm ghost" data-action="stmt-new" data-card="${esc(c.id)}">Estado de cuenta</button>
@@ -172,10 +186,11 @@ export function planView(state, d) {
   <p class="foot">Dinero neto = efectivo + banco − lo que debes en tarjetas. <button class="link" data-action="rebase">Repartir lo que queda en los días que faltan</button></p>
 
   ${group('Este periodo', `<div class="panel">${d.instances.map((i) => item({
+    action: `data-action="inst-open" data-id="${esc(i.id)}"`,
     lead: `<span class="ic hue-${st[i.status][1]}">${icon(st[i.status][0], 18)}</span>`,
-    title: esc(i.name), meta: `${fmtDate(i.date)} · ${esc(accName(state, i.account))}`,
-    trail: `<span class="trail-col"><b class="amt ${i.kind === 'income' ? 'pos' : ''}">${money(i.signed, { sign: i.kind === 'income' })}</b>${i.status === 'done' ? '' : `<button class="link sm" data-action="${i.skipped ? 'inst-unskip' : 'inst-skip'}" data-id="${esc(i.id)}">${i.skipped ? 'Volver a contar' : 'Saltar'}</button>`}</span>`,
-  })).join('')}</div>`)}
+    title: esc(i.name), meta: `${fmtDate(i.date)} · ${esc(accName(state, i.account))} · ${{ done: i.kind === 'income' ? 'llegó' : 'pagado', skipped: 'saltado', overdue: 'no ha llegado', due: 'pendiente', pending: 'próximo' }[i.status]}`,
+    trail: `<b class="amt ${i.kind === 'income' ? 'pos' : ''} ${i.status === 'skipped' ? 'strike' : ''}">${money(i.status === 'done' ? i.value : i.signed, { sign: i.kind === 'income' })}</b>${icon('chevron', 16, 'mute')}`,
+  })).join('')}</div><p class="foot">Toca cualquiera para marcarlo, cambiar el monto de este mes o saltarlo.</p>`)}
 
   ${group('Se repite', `<div class="panel">${state.schedules.map((s) => item({
     action: `data-action="sched-edit" data-id="${esc(s.id)}"`,
@@ -235,10 +250,14 @@ export function masView(state, d) {
     <p class="foot">Para otro banco copia la macro y cambia <code>src=nu</code> por ${Object.keys(st.quickAdd?.sources || {}).filter((k) => k !== 'nu').map((k) => `<code>${esc(k)}</code>`).join(', ') || 'su nombre'}. El metro va solo a Transporte; lo demás queda en “Por revisar”.</p>
   </div>`)}
 
-  ${group('Ajustes', `<div class="panel">
-    <label class="item"><span class="item-body"><span class="item-title">Transporte diario apartado</span></span><input type="number" inputmode="decimal" step="0.5" data-setting="transport.rate" value="${(st.transport?.rate || 0) / 100}"></label>
-    <label class="item"><span class="item-body"><span class="item-title">Mínimo que siempre dejo en la cuenta</span></span><input type="number" inputmode="decimal" data-setting="liquidityFloor" value="${(st.liquidityFloor || 0) / 100}"></label>
-    <label class="item"><span class="item-body"><span class="item-title">Con qué pago el transporte</span></span><select data-setting="transport.account">${state.accounts.filter((a) => a.type !== 'savings').map((a) => `<option value="${esc(a.id)}" ${a.id === st.transport?.account ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
+  ${group('Editar', `<div class="panel">
+    ${[
+    ['acc-list', 'card', 'Cuentas y tarjetas', 'Nombres, límites, días de corte y de pago'],
+    ['sched-list', 'calendar', 'Ingresos y gastos fijos', 'Sueldo, beca, TotalPass, Claude, MSI, ahorro'],
+    ['stmt-list', 'pay', 'Estados de cuenta', 'Lo que debes pagar de cada tarjeta'],
+    ['fares', 'metro', 'Botones rápidos', 'Metro, Metrobús y los que quieras'],
+    ['period', 'more', 'Periodo, transporte y colchón', 'Fechas, apartado diario, mínimo en cuenta'],
+  ].map(([a, ic, t, m]) => item({ action: `data-action="${a}"`, lead: `<span class="ic hue-gray">${icon(ic, 18)}</span>`, title: t, meta: m, trail: icon('chevron', 16, 'mute') })).join('')}
   </div>`)}
 
   ${group('Respaldo', `<div class="panel pad">
@@ -276,7 +295,7 @@ export function onboardingView() {
 }
 
 // Hoja para registrar un movimiento.
-export function entrySheet(state, draft) {
+export function entrySheet(state, draft, candidates = []) {
   const types = [['expense', 'Gasto'], ['income', 'Ingreso'], ['pay', 'Pagar tarjeta'], ['transfer', 'Mover'], ['adjust', 'Saldo real']];
   const accs = state.accounts.filter((a) => !a.archived);
   const fromList = draft.type === 'expense' ? accs.filter((a) => a.type !== 'savings')
@@ -291,6 +310,10 @@ export function entrySheet(state, draft) {
   <p class="label">${draft.type === 'income' ? 'Entra a' : draft.type === 'adjust' ? 'Cuenta' : draft.type === 'expense' ? 'Pagué con' : 'Sale de'}</p>
   ${chips(fromList, 'account', draft.account)}
   ${draft.type === 'pay' || draft.type === 'transfer' ? `<p class="label">${draft.type === 'pay' ? 'Tarjeta' : 'Hacia'}</p>${chips(toList.filter((a) => a.id !== draft.account), 'to', draft.to)}` : ''}
+  ${candidates.length ? `<p class="label">¿Es algo que ya tenías planeado?</p><div class="chips">
+    <button type="button" class="chip ${!draft.planRef || draft.planRef === 'none' ? 'on' : ''}" data-pick="planRef" data-val="none">No, es otro ${draft.type === 'income' ? 'ingreso' : 'gasto'}</button>
+    ${candidates.map((i) => `<button type="button" class="chip ${draft.planRef === i.id ? 'on' : ''}" data-pick="planRef" data-val="${esc(i.id)}">${icon(i.kind === 'income' ? 'income' : 'pin', 16)}${esc(i.name)} · ${money(i.amount, { decimals: false })}</button>`).join('')}
+  </div>` : ''}
   ${draft.type === 'expense' ? `<p class="label">Categoría</p><div class="chips">${CATEGORIES.map((k) => `<button type="button" class="chip ${draft.cat === k ? 'on' : ''}" data-pick="cat" data-val="${k}">${icon(catMeta(k).icon, 16)}${catMeta(k).label}</button>`).join('')}</div>` : ''}
   <div class="fields">
     ${draft.type !== 'adjust' ? `<input class="field" type="text" placeholder="Descripción (opcional)" value="${esc(draft.desc || '')}" data-field="desc">` : ''}

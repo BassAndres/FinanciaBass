@@ -47,10 +47,26 @@ export function parseIntent(params, settings) {
   return { trusted, extId, tx: { type: 'expense', amount, desc: get('desc') || 'Gasto', cat, account, date, src: 'url' } };
 }
 
-// ¿El cargo capturado corresponde a un fijo que ya estaba planeado (p. ej. Spotify)? Entonces se liga a él.
+// ¿Este movimiento es algo que ya estaba planeado (TotalPass, el dinero de mamá, la beca…)? Entonces se liga a
+// su instancia para no contarlo dos veces. Exige que coincida la cuenta, el nombre o el monto exacto.
+const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 export function matchInstance(instances, tx) {
-  return instances.find((i) =>
-    (i.kind === 'fixed' || i.kind === 'msi') && i.status !== 'done' && i.status !== 'skipped' &&
-    i.account === tx.account && Math.abs(i.amount - tx.amount) <= Math.max(100, i.amount * 0.15) &&
-    Math.abs(diffDays(i.date, tx.date)) <= 3) || null;
+  const wantIncome = tx.type === 'income';
+  if (tx.type !== 'income' && tx.type !== 'expense') return null;
+  let best = null, bestScore = 0;
+  for (const i of instances) {
+    if (i.status === 'done' || i.status === 'skipped') continue;
+    if (wantIncome ? i.kind !== 'income' : i.kind !== 'fixed' && i.kind !== 'msi') continue;
+    if (Math.abs(i.amount - tx.amount) > Math.max(100, i.amount * 0.15)) continue;
+    const dd = diffDays(tx.date, i.date);
+    if (wantIncome ? dd < -3 || dd > 10 : Math.abs(dd) > 5) continue;
+    const sameAcc = i.account === tx.account;
+    const words = norm(i.name).split(/[^a-z0-9]+/).filter((w) => w.length > 2);
+    const nameHit = words.some((w) => norm(tx.desc).includes(w));
+    const exact = i.amount === tx.amount;
+    if (!sameAcc && !nameHit && !exact) continue;
+    const score = (sameAcc ? 2 : 0) + (nameHit ? 3 : 0) + (exact ? 1 : 0) - Math.abs(dd) / 100;
+    if (score > bestScore) { best = i; bestScore = score; }
+  }
+  return best;
 }

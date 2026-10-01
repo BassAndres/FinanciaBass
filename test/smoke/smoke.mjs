@@ -73,6 +73,42 @@ await page.goto(`${base}?raw=${encodeURIComponent('Compraste $40.00 en OXXO TONA
 await page.locator('.amount-display').waitFor();
 assert.equal(await page.locator('.amount-display .num').textContent(), '40');
 
+// "¿Cómo sale tu número?" y las hojas de edición abren sin errores.
+await page.goto(`${base}#/hoy`);
+await page.click('.hero');
+await page.getByText('¿Cómo sale tu número?').waitFor();
+await page.click('#sheet [data-close].sheet-x');
+await page.goto(`${base}#/plan`);
+await page.click('[data-action="inst-open"]');
+await page.locator('#sheet .form').waitFor();
+await page.click('#sheet .sheet-x');
+await page.goto(`${base}#/mas`);
+for (const a of ['acc-list', 'sched-list', 'stmt-list', 'fares', 'period']) {
+  await page.click(`[data-action="${a}"]`);
+  await page.locator('#sheet:not([hidden]) h2').waitFor();
+  await page.click('#sheet .sheet-x');
+}
+// Editar el monto de un fijo para los próximos meses.
+await page.click('[data-action="sched-list"]');
+await page.click('#sheet [data-row="2"]');
+await page.fill('#sheet input[name="amount"]', '1100');
+await page.click('#sheet [data-sheet-action="ok"]');
+assert.equal(await page.evaluate(() => window.fb.state.schedules.find((x) => x.id === 'fijo').amount), 110000);
+
+// Un ingreso planeado registrado a mano se liga solo y no infla el número.
+await page.goto(`${base}#/hoy`);
+const before = await page.locator('.hero-amount').textContent();
+await page.click('#fab');
+await page.click('[data-pick="type"][data-val="income"]');
+for (const k of ['1', '5', '0', '0']) await page.click(`.keypad [data-key="${k}"]`);
+await page.click('[data-pick="account"][data-val="banco"]');
+await page.fill('#sheet input[data-field="date"]', '2026-10-10');
+await page.click('#sheet [data-sheet-action="save"]');
+const linked = await page.evaluate(() => window.fb.state.tx.find((t) => t.type === 'income')?.planRef);
+assert.equal(linked, 'beca@2026-10-10');
+assert.equal(await page.locator('.hero-amount').textContent(), before);
+assert.equal(before, '$14.16');
+
 // Todas las pantallas cargan.
 for (const r of ['movs', 'tarjetas', 'plan', 'mas', 'hoy']) {
   await page.goto(`${base}#/${r}`);
@@ -84,7 +120,7 @@ await page.evaluate(() => navigator.serviceWorker.ready);
 await page.reload();
 await ctx.setOffline(true);
 await page.reload();
-assert.equal(await page.locator('.hero-amount').textContent(), '$17.50');
+assert.equal(await page.locator('.hero-amount').textContent(), before); // 30 − 3.34 (fijo +$100) − 12.50
 await ctx.setOffline(false);
 
 // Una versión nueva publicada se ve al recargar, sin borrar la caché.

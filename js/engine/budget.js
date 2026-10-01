@@ -15,6 +15,7 @@ import { expandSchedules, instanceDate } from './schedule.js';
 import { periodFor } from './periods.js';
 import { indexAccounts, balancesAt, netOf, liquidOf, txNetEffect, isLiquid } from './ledger.js';
 import { statementStatus, cardSummaries, recommendCard } from './cards.js';
+import { TRANSPORT_RE } from './quickadd.js';
 
 const TRANSPORT = 'transporte';
 
@@ -35,7 +36,9 @@ function periodContext(state, P) {
   const Q = (st.transport?.rate || 0) * transportDays(st, P.s, P.e);
   // Movimientos que no entran en A(t): ligados a instancias de este periodo o posteriores, y transporte del periodo.
   const isPlanned = (tx) => tx.planRef && !tx.planRef.startsWith('stmt:') && instanceDate(tx.planRef) >= P.s;
-  const isTransport = (tx) => tx.type === 'expense' && tx.cat === TRANSPORT && tx.date >= P.s && tx.date <= P.e && !tx.planRef;
+  // Solo el transporte diario (metro, metrobús…) sale de la bolsa; un Uber o taxi cuenta como gasto normal.
+  const isTransport = (tx) => tx.type === 'expense' && tx.cat === TRANSPORT && tx.date >= P.s && tx.date <= P.e && !tx.planRef &&
+    (tx.pool === true || (tx.pool !== false && TRANSPORT_RE.test(tx.desc || '')));
   return { accounts, st, instances, ids, Q, isPlanned, isTransport };
 }
 
@@ -106,6 +109,10 @@ export function computeDashboard(state, today) {
     }
   }
 
+  // Gasto variable (sin fijos planeados ni transporte de la bolsa): el que mueve tu número de cada día.
+  const variable = state.tx.filter((x) => x.type === 'expense' && x.date >= s0 && x.date <= t && !ctx.isPlanned(x) && !ctx.isTransport(x));
+  const variableSpent = variable.reduce((a, x) => a + x.amount, 0);
+  const todayTx = state.tx.filter((x) => x.date === t && x.type === 'expense');
   const liquid = liquidOf(now.bal, accounts);
   const statements = statementStatus(state, accounts).filter((s) => s.remaining > 0);
   const cards = cardSummaries(state, now.bal, accounts, t);
@@ -114,7 +121,10 @@ export function computeDashboard(state, today) {
   const cardOfDay = recommendCard(cards);
 
   return {
-    today, period: P, k, D, daysLeft: D - k, libre, base, disponible,
+    today, period: P, k, D, daysLeft: D - k, libre, base, disponible, accrued: accrued(k), periodStart: s0,
+    variableSpent, otherChanges: libre - now.R - variableSpent,
+    todaySpent: todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + x.amount, 0),
+    todayTx: todayTx.map((x) => ({ ...x, pooled: ctx.isTransport(x), planned: ctx.isPlanned(x) })),
     safeToSpend: Math.max(0, Math.min(disponible, liq.capped)),
     R: now.R, recovery, deficit: now.R < 0 || libre < 0,
     net: netOf(now.bal, accounts), liquid, balances: now.bal,

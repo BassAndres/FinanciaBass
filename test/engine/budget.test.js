@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { computeDashboard, autoPostDue } from '../../js/engine/budget.js';
+import { matchInstance } from '../../js/engine/quickadd.js';
 import { demoState, tx } from '../fixtures/demo.js';
 
 const disp = (s, d) => computeDashboard(s, d).disponible;
@@ -49,10 +50,28 @@ test('fijo ligado: solo afecta la diferencia contra lo planeado', () => {
 
 test('bolsa de transporte: dentro de lo apartado no cambia, lo que exceda sí', () => {
   const s = demoState();
-  for (let i = 1; i <= 10; i++) s.tx.push(tx({ type: 'expense', account: 'tc', amount: 2000, date: `2026-10-${String(i).padStart(2, '0')}`, cat: 'transporte' }));
+  for (let i = 1; i <= 10; i++) s.tx.push(tx({ type: 'expense', account: 'tc', amount: 2000, date: `2026-10-${String(i).padStart(2, '0')}`, cat: 'transporte', desc: 'Metro' }));
   assert.equal(disp(s, '2026-10-10'), 30000);
-  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 45000, date: '2026-10-10', cat: 'transporte' }));
+  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 45000, date: '2026-10-10', cat: 'transporte', pool: true }));
   assert.equal(disp(s, '2026-10-10'), 30000 - 5000);
+});
+
+test('un Uber con categoría transporte sí se descuenta (no sale de la bolsa)', () => {
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 9000, date: '2026-10-01', cat: 'transporte', desc: 'Uber' }));
+  assert.equal(disp(s, '2026-10-01'), 3000 - 9000);
+  const d = computeDashboard(s, '2026-10-01');
+  assert.equal(d.todaySpent, 9000);
+  assert.equal(d.variableSpent, 9000);
+});
+
+test('desglose: acumulado − gastado − otros = disponible', () => {
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'efectivo', amount: 1000, date: '2026-10-02', cat: 'comida' }));
+  s.tx.push(tx({ type: 'adjust', account: 'banco', amount: -500, date: '2026-10-03' }));
+  const d = computeDashboard(s, '2026-10-03');
+  assert.equal(d.accrued - d.variableSpent - d.otherChanges, d.disponible);
+  assert.equal(d.variableSpent, 1000);
 });
 
 test('ingreso menor al planeado o que no llega', () => {
@@ -135,4 +154,19 @@ test('antes de empezar el periodo muestra el día 1', () => {
   const d = computeDashboard(demoState(), '2026-09-30');
   assert.ok(d.period.notStarted);
   assert.equal(d.disponible, 3000);
+});
+
+test('registrar a mano algo planeado se liga y no se cuenta doble', () => {
+  const s = demoState();
+  const d0 = computeDashboard(s, '2026-10-03');
+  // Dinero semanal registrado a mano (sin ligar explícitamente)
+  const income = tx({ type: 'income', account: 'efectivo', amount: 80000, date: '2026-10-03', desc: 'me dio mi mamá' });
+  const m = matchInstance(d0.instances, income);
+  assert.equal(m.id, 'semanal@2026-10-03');
+  s.tx.push({ ...income, planRef: m.id });
+  assert.equal(disp(s, '2026-10-03'), d0.disponible);
+  // Suscripción pagada con otra tarjeta pero con el mismo nombre
+  const d1 = computeDashboard(s, '2026-10-15');
+  const sub = tx({ type: 'expense', account: 'tb', amount: 100000, date: '2026-10-15', desc: 'Suscripción', cat: 'suscripciones' });
+  assert.equal(matchInstance(d1.instances, sub)?.id, 'fijo@2026-10-15');
 });

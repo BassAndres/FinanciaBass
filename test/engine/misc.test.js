@@ -81,8 +81,8 @@ test('captura por URL: token, fuente y borrador', () => {
 
 test('un cargo capturado se liga a su fijo planeado', () => {
   const inst = [{ id: 'spot@2026-10-29', kind: 'fixed', status: 'pending', account: 'tb', amount: 4000, date: '2026-10-29' }];
-  assert.equal(matchInstance(inst, { account: 'tb', amount: 4000, date: '2026-10-28' }).id, 'spot@2026-10-29');
-  assert.equal(matchInstance(inst, { account: 'tc', amount: 4000, date: '2026-10-28' }), null);
+  assert.equal(matchInstance(inst, { type: 'expense', account: 'tb', amount: 4000, date: '2026-10-28' }).id, 'spot@2026-10-29');
+  assert.equal(matchInstance(inst, { type: 'expense', account: 'tc', amount: 4500, date: '2026-10-28', desc: 'algo' }), null);
 });
 
 test('código de configuración ida y vuelta, y detecta cortes', () => {
