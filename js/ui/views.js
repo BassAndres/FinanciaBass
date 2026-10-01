@@ -1,17 +1,27 @@
 // Pantallas. Cada función regresa HTML; los botones usan data-action y los maneja app.js.
 import { money, fmtDate, diffDays, describeRule } from '../engine/index.js';
 import { esc } from './dom.js';
+import { icon, badge, catMeta } from './icons.js';
 
-export const CATEGORIES = [
-  ['comida', '🍔 Comida'], ['transporte', '🚇 Transporte'], ['antojos', '🍩 Antojos'], ['escuela', '📚 Escuela'],
-  ['salidas', '🎉 Salidas'], ['salud', '💊 Salud'], ['ropa', '👕 Ropa'], ['regalos', '🎁 Regalos'],
-  ['suscripciones', '📺 Suscripciones'], ['otros', '📦 Otros'],
-];
-const catLabel = (c) => (CATEGORIES.find(([k]) => k === c)?.[1]) || ({ fijo: '📌 Fijo', msi: '🗓️ MSI', ingreso: '💵 Ingreso', ahorro: '🐷 Ahorro', pago: '💳 Pago' }[c] || '📦 Otros');
+export const CATEGORIES = ['comida', 'transporte', 'antojos', 'escuela', 'salidas', 'salud', 'ropa', 'regalos', 'suscripciones', 'otros'];
 
 const pct = (x) => `${Math.round(x * 100)}%`;
 const accName = (state, id) => state.accounts.find((a) => a.id === id)?.name || id || '—';
 const liquidAccounts = (state) => state.accounts.filter((a) => (a.type === 'bank' || a.type === 'cash') && !a.archived);
+const ACC_ICON = { bank: 'bank', cash: 'cash', savings: 'savings', card: 'card' };
+
+// $1,234.56 con los centavos más chicos.
+export function bigMoney(cents) {
+  const [int, dec] = money(Math.abs(cents)).slice(1).split('.');
+  return `${cents < 0 ? '<span class="neg">−</span>' : ''}<span class="cur">$</span>${int}<span class="dec">.${dec}</span>`;
+}
+
+const item = ({ lead, title, meta = '', trail = '', action = '', cls = '' }) =>
+  `<${action ? 'button type="button"' : 'div'} class="item ${cls}" ${action}>
+    ${lead || ''}<span class="item-body"><span class="item-title">${title}</span>${meta ? `<span class="item-meta">${meta}</span>` : ''}</span>${trail}
+  </${action ? 'button' : 'div'}>`;
+
+const group = (title, body, extra = '') => `<section class="group"><div class="group-head"><h2>${title}</h2>${extra}</div>${body}</section>`;
 
 function heroTone(d) {
   if (d.safeToSpend <= 0) return 'bad';
@@ -21,71 +31,84 @@ function heroTone(d) {
 
 export function hoyView(state, d) {
   const P = d.period;
-  const tone = heroTone(d);
   const payToday = d.payPlan.filter((p) => p.date <= d.today);
   const upcoming = d.payPlan.filter((p) => p.date > d.today).slice(0, 4);
   const review = state.tx.filter((t) => t.review).slice(-5).reverse();
   const c = d.cardOfDay;
   const staleBackup = !state.settings.lastBackupAt || diffDays(d.today, state.settings.lastBackupAt) >= 7;
-  const leftover = d.leftover;
+  const tr = d.transport;
+  const quick = [
+    ...(state.settings.fares || []).map((f, i) => `<button class="tile" data-action="fare" data-i="${i}">${icon(/bus/i.test(f.name) ? 'bus' : 'metro', 22)}<span>${esc(f.name)}</span><b>${money(f.amount, { decimals: false })}</b></button>`),
+    `<button class="tile" data-action="new" data-cat="comida">${icon('food', 22)}<span>Comida</span><b>&nbsp;</b></button>`,
+    `<button class="tile" data-action="new" data-cat="antojos">${icon('treat', 22)}<span>Antojo</span><b>&nbsp;</b></button>`,
+    `<button class="tile" data-action="new">${icon('plus', 22)}<span>Otro</span><b>&nbsp;</b></button>`,
+  ].join('');
+
   return `
-  <section class="hero ${tone}">
-    <p class="hero-label">${P.notStarted ? `Tu plan empieza el ${fmtDate(P.s)} · ese día podrás gastar` : 'Hoy puedes gastar'}</p>
-    <p class="hero-amount">${money(d.safeToSpend)}</p>
-    ${d.disponible < 0 ? `<p class="hero-sub">Vas ${money(d.disponible)} abajo${d.recovery ? ` · te recuperas el ${fmtDate(d.recovery)} si ya no gastas` : ''}</p>` : ''}
-    ${d.safeToSpend < d.disponible ? `<p class="hero-sub">Tienes ${money(d.disponible)} acumulado, pero te muestro menos para que alcance a los pagos que vienen.</p>` : ''}
-    <div class="hero-meta">
-      <span>Base <b>${money(d.base)}</b>/día</span>
-      <span>Quedan <b>${d.daysLeft}</b> días (hasta ${fmtDate(P.e, false)})</span>
-    </div>
-    <div class="bar"><i style="width:${Math.min(100, Math.round((d.k / d.D) * 100))}%"></i></div>
+  <header class="top"><p class="eyebrow">${fmtDate(d.today)}</p><h1>Tu día</h1></header>
+
+  <section class="hero ${heroTone(d)}">
+    <p class="hero-label">${P.notStarted ? `Tu plan empieza el ${fmtDate(P.s)}` : 'Hoy puedes gastar'}</p>
+    <p class="hero-amount">${bigMoney(d.safeToSpend)}</p>
+    ${d.disponible < 0 ? `<p class="hero-note">Vas ${money(d.disponible)} abajo${d.recovery ? `. Si ya no gastas, te recuperas el ${fmtDate(d.recovery)}.` : '.'}</p>` : ''}
+    ${d.safeToSpend < d.disponible ? `<p class="hero-note">Llevas ${money(d.disponible)} acumulado; te muestro menos para que alcance a tus pagos.</p>` : ''}
+    <div class="hero-track"><i style="width:${Math.min(100, Math.round((d.k / d.D) * 100))}%"></i></div>
+    <dl class="hero-stats">
+      <div><dt>Base diaria</dt><dd>${money(d.base)}</dd></div>
+      <div><dt>Quedan</dt><dd>${d.daysLeft} días</dd></div>
+      <div><dt>Transporte</dt><dd>${money(tr.spent, { decimals: false })}<small> / ${money(tr.budget, { decimals: false })}</small></dd></div>
+    </dl>
   </section>
 
-  <section class="quick">
-    ${(state.settings.fares || []).map((f, i) => `<button class="chip-btn" data-action="fare" data-i="${i}">${esc(f.name)} <b>${money(f.amount, { decimals: false })}</b></button>`).join('')}
-    <button class="chip-btn" data-action="new" data-cat="comida">🍔 Comida</button>
-    <button class="chip-btn" data-action="new" data-cat="antojos">🍩 Antojo</button>
-    <button class="chip-btn" data-action="new">＋ Otro</button>
-  </section>
+  <div class="tiles">${quick}</div>
 
-  ${d.deficit ? `<div class="alert bad"><b>Este periodo no alcanza.</b> Con lo que tienes y lo que te va a entrar te faltan ${money(Math.min(d.R, d.libre))}. Revisa en <a href="#/plan">Plan</a> qué fijo puedes saltar o usa tu alcancía.</div>` : ''}
-  ${d.liquidity.short ? `<div class="alert warn"><b>Ojo con el ${fmtDate(d.liquidity.minDate)}:</b> ese día te faltarían ${money(d.liquidity.short)} (${esc(d.liquidity.cause || 'pagos')}). Ya lo tomé en cuenta en tu número de hoy.</div>` : ''}
+  ${d.deficit ? `<div class="notice bad">${icon('alert')}<p><b>Este periodo no alcanza.</b> Te faltan ${money(-Math.min(d.R, d.libre))}. En <a href="#/plan">Plan</a> puedes saltar un fijo o usar tu alcancía.</p></div>` : ''}
+  ${d.liquidity.short ? `<div class="notice warn">${icon('clock')}<p><b>Ojo con el ${fmtDate(d.liquidity.minDate)}.</b> Ese día te faltarían ${money(d.liquidity.short)} (${esc(d.liquidity.cause || 'pagos')}). Ya lo tomé en cuenta en tu número de hoy.</p></div>` : ''}
 
-  ${payToday.length ? `<h2>Paga hoy</h2>${payToday.map((p) => `
-    <div class="card row">
-      <div><b>${money(p.amount)}</b> a ${esc(p.cardName)}<small>${p.onDue ? `Fecha límite: ${fmtDate(p.date)}` : 'Adelántalo hoy: ya tienes el dinero'}</small></div>
-      <button class="btn small" data-action="pay" data-card="${esc(p.card)}" data-amount="${p.amount}">Ya pagué</button>
-    </div>`).join('')}` : ''}
+  ${payToday.length ? group('Paga hoy', `<div class="panel">${payToday.map((p) => item({
+    lead: `<span class="ic hue-ink">${icon('card', 18)}</span>`,
+    title: `${money(p.amount)} a ${esc(p.cardName)}`,
+    meta: p.onDue ? `Fecha límite ${fmtDate(p.date)}` : 'Ya tienes el dinero: adelántalo',
+    trail: `<button class="btn sm" data-action="pay" data-card="${esc(p.card)}" data-amount="${p.amount}">Ya pagué</button>`,
+  })).join('')}</div>`) : ''}
 
-  ${leftover ? `<div class="card row"><div>El periodo pasado te sobraron <b>${money(leftover.amount)}</b> 🎉<small>¿Los mandas a tu alcancía?</small></div>
-    <div class="row-actions"><button class="btn small" data-action="leftover-save">Sí</button><button class="btn small ghost" data-action="leftover-keep">Dejarlos</button></div></div>` : ''}
+  ${d.leftover ? `<div class="notice good">${icon('savings')}<p><b>Te sobraron ${money(d.leftover.amount)} el periodo pasado.</b> ¿Los mandas a tu alcancía?</p>
+    <div class="notice-actions"><button class="btn sm" data-action="leftover-save">Sí, guardar</button><button class="btn sm ghost" data-action="leftover-keep">Dejarlos</button></div></div>` : ''}
 
-  ${d.prompts.length ? `<h2>Pendientes</h2>${d.prompts.map((i) => promptRow(state, i)).join('')}` : ''}
+  ${d.prompts.length ? group('Pendientes', `<div class="panel">${d.prompts.map((i) => promptRow(state, i)).join('')}</div>`) : ''}
 
-  ${review.length ? `<h2>Por revisar</h2>${review.map((t) => `
-    <div class="card row"><div><b>${money(t.amount)}</b> ${esc(t.desc)}<small>${esc(accName(state, t.account))} · ${fmtDate(t.date)} · capturado automático</small></div>
-    <div class="row-actions"><button class="btn small" data-action="review-ok" data-id="${t.id}">OK</button><button class="btn small ghost" data-action="edit-tx" data-id="${t.id}">Editar</button></div></div>`).join('')}` : ''}
+  ${review.length ? group('Por revisar', `<div class="panel">${review.map((t) => item({
+    lead: badge(t.cat), title: `${money(t.amount)} · ${esc(t.desc)}`,
+    meta: `${esc(accName(state, t.account))} · ${fmtDate(t.date)} · capturado de una notificación`,
+    trail: `<span class="pair"><button class="btn sm" data-action="review-ok" data-id="${t.id}">OK</button><button class="btn sm ghost" data-action="edit-tx" data-id="${t.id}">Editar</button></span>`,
+  })).join('')}</div>`) : ''}
 
-  ${c ? `<h2>Si hoy pagas con tarjeta</h2><div class="card"><b>Usa ${esc(c.name)}</b><small>Lo pagas hasta el ${fmtDate(c.pay.due)} (${c.pay.days} días) · uso ${c.util != null ? pct(c.util) : '—'} de su límite</small></div>` : ''}
+  ${c ? group('Si hoy pagas con tarjeta', `<div class="panel">${item({
+    lead: `<span class="ic hue-green">${icon('card', 18)}</span>`, title: `Usa ${esc(c.name)}`,
+    meta: `La pagas hasta el ${fmtDate(c.pay.due)} (${c.pay.days} días) · uso ${c.util != null ? pct(c.util) : '—'}`,
+  })}</div>`) : ''}
 
-  ${upcoming.length ? `<h2>Próximos pagos</h2><div class="card list">${upcoming.map((p) => `<div class="li"><span>${fmtDate(p.date)}</span><span>${esc(p.cardName)}</span><b>${money(p.amount)}</b></div>`).join('')}</div>` : ''}
+  ${upcoming.length ? group('Próximos pagos', `<div class="panel">${upcoming.map((p) => item({
+    lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
+    title: esc(p.cardName), meta: p.onDue ? 'En su fecha límite' : 'Abono planeado', trail: `<b class="amt">${money(p.amount)}</b>`,
+  })).join('')}</div>`, '<a class="link" href="#/tarjetas">Ver todo</a>') : ''}
 
-  <div class="card row soft"><div>Transporte del periodo<small>${money(d.transport.spent)} de ${money(d.transport.budget)} apartados</small></div></div>
-  ${staleBackup ? `<div class="card row soft"><div>Haz un respaldo<small>Tus datos solo viven en este celular.</small></div><button class="btn small ghost" data-action="backup">Respaldar</button></div>` : ''}
+  ${staleBackup ? `<div class="notice">${icon('shield')}<p><b>Haz un respaldo.</b> Tus datos solo viven en este celular.</p><div class="notice-actions"><button class="btn sm ghost" data-action="backup">Respaldar</button></div></div>` : ''}
   `;
 }
 
 function promptRow(state, i) {
-  const where = accName(state, i.account);
   const q = i.kind === 'income'
-    ? (i.status === 'overdue' ? `¿Llegó ${esc(i.name)}? (${fmtDate(i.date)})` : `¿Ya llegó ${esc(i.name)}?`)
-    : i.kind === 'savings' ? `¿Ya apartaste ${esc(i.name)}?` : `¿Ya se cobró ${esc(i.name)}?`;
-  return `<div class="card row"><div>${q}<small>${money(i.amount)} · ${esc(where)}${i.status === 'overdue' ? ' · mientras no llegue no lo cuento' : ''}</small></div>
-    <div class="row-actions">
-      <button class="btn small" data-action="inst-yes" data-id="${esc(i.id)}">Sí</button>
-      <button class="btn small ghost" data-action="inst-other" data-id="${esc(i.id)}">Otra $</button>
-      <button class="btn small ghost" data-action="inst-skip" data-id="${esc(i.id)}">${i.kind === 'income' ? 'No' : 'Saltar'}</button>
-    </div></div>`;
+    ? (i.status === 'overdue' ? `¿Llegó ${esc(i.name)}?` : `¿Ya llegó ${esc(i.name)}?`)
+    : i.kind === 'savings' ? `¿Apartaste ${esc(i.name)}?` : `¿Ya se cobró ${esc(i.name)}?`;
+  const lead = badge(i.kind === 'income' ? 'ingreso' : i.kind === 'savings' ? 'ahorro' : i.kind === 'msi' ? 'msi' : 'fijo');
+  return `<div class="item stack">${lead}<span class="item-body"><span class="item-title">${q}</span>
+    <span class="item-meta">${money(i.amount)} · ${esc(accName(state, i.account))} · ${fmtDate(i.date)}${i.status === 'overdue' ? ' · no lo cuento hasta que llegue' : ''}</span>
+    <span class="pair">
+      <button class="btn sm" data-action="inst-yes" data-id="${esc(i.id)}">Sí</button>
+      <button class="btn sm ghost" data-action="inst-other" data-id="${esc(i.id)}">Otra cantidad</button>
+      <button class="btn sm ghost" data-action="inst-skip" data-id="${esc(i.id)}">${i.kind === 'income' ? 'No llegó' : 'Saltar'}</button>
+    </span></span></div>`;
 }
 
 export function movsView(state, d) {
@@ -93,68 +116,80 @@ export function movsView(state, d) {
   const list = state.tx.filter((t) => t.date >= P.s && t.date <= d.today).sort((a, b) => (a.date === b.date ? (b.ts || 0) - (a.ts || 0) : a.date < b.date ? 1 : -1));
   const byDay = {};
   for (const t of list) (byDay[t.date] ||= []).push(t);
+  const spent = list.filter((t) => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
   const sign = (t) => (t.type === 'income' ? 1 : t.type === 'expense' ? -1 : 0);
-  return `<h1>Movimientos</h1><p class="muted">Del ${fmtDate(P.s)} a hoy</p>
-    ${Object.keys(byDay).length ? Object.entries(byDay).map(([day, txs]) => `
-      <h2>${fmtDate(day)}</h2><div class="card list">${txs.map((t) => `
-        <button class="li tx" data-action="edit-tx" data-id="${t.id}">
-          <span>${catLabel(t.type === 'transfer' ? (t.cat || 'pago') : t.type === 'adjust' ? 'otros' : t.cat)}</span>
-          <span class="grow">${esc(t.desc || (t.type === 'transfer' ? `${accName(state, t.account)} → ${accName(state, t.to)}` : t.type === 'adjust' ? 'Ajuste de saldo' : ''))}<small>${esc(accName(state, t.account))}${t.review ? ' · por revisar' : ''}</small></span>
-          <b class="${sign(t) > 0 ? 'pos' : sign(t) < 0 ? '' : 'muted'}">${t.type === 'adjust' ? money(t.amount, { sign: true }) : money(sign(t) * t.amount || t.amount)}</b>
-        </button>`).join('')}</div>`).join('') : '<div class="empty">Aún no hay movimientos en este periodo.</div>'}`;
+  const catOf = (t) => (t.type === 'transfer' ? (t.cat === 'ahorro' ? 'ahorro' : t.cat === 'pago' ? 'pago' : 'mover') : t.type === 'adjust' ? 'ajuste' : t.type === 'income' ? 'ingreso' : t.cat);
+  return `<header class="top"><p class="eyebrow">Desde el ${fmtDate(P.s)}</p><h1>Movimientos</h1></header>
+    <div class="summary"><div><small>Gastado en el periodo</small><b>${money(spent)}</b></div><div><small>Movimientos</small><b>${list.length}</b></div></div>
+    ${Object.keys(byDay).length ? Object.entries(byDay).map(([day, txs]) => group(fmtDate(day), `<div class="panel">${txs.map((t) => item({
+      action: `data-action="edit-tx" data-id="${t.id}"`,
+      lead: badge(catOf(t)),
+      title: esc(t.desc || (t.type === 'transfer' ? `${accName(state, t.account)} → ${accName(state, t.to)}` : catMeta(catOf(t)).label)),
+      meta: `${esc(accName(state, t.account))}${t.review ? ' · por revisar' : ''}`,
+      trail: `<b class="amt ${sign(t) > 0 ? 'pos' : sign(t) === 0 ? 'mute' : ''}">${t.type === 'adjust' ? money(t.amount, { sign: true }) : sign(t) > 0 ? money(t.amount, { sign: true }) : sign(t) < 0 ? money(-t.amount) : money(t.amount)}</b>`,
+    })).join('')}</div>`)).join('') : `<div class="empty">${icon('list', 28)}<p>Aún no hay movimientos en este periodo.</p></div>`}`;
 }
 
 export function tarjetasView(state, d) {
   const stByCard = {};
   for (const s of d.statements) (stByCard[s.card] ||= []).push(s);
-  return `<h1>Tarjetas</h1>
+  const total = d.cards.reduce((s, c) => s + c.owed, 0);
+  return `<header class="top"><p class="eyebrow">Debes en total ${money(total)}</p><h1>Tarjetas</h1></header>
   ${d.cards.map((c) => {
     const tone = c.util == null ? '' : c.util <= 0.3 ? 'ok' : c.util <= 0.5 ? 'warn' : 'bad';
-    return `<div class="card">
-      <div class="row"><div><b>${esc(c.name)}</b>${c.blocked ? ' <span class="tag">bloqueada</span>' : ''}<small>${c.pay ? `Corte ${fmtDate(c.pay.cut, false)} · compra hoy → pagas ${fmtDate(c.pay.due)}` : 'Sin fechas de corte'}</small></div><b>${money(c.owed)}</b></div>
-      ${c.limit ? `<div class="bar ${tone}"><i style="width:${Math.min(100, Math.round((c.util || 0) * 100))}%"></i></div>
-      <small>Uso ${pct(c.util || 0)} de ${money(c.limit, { decimals: false })}${c.msi ? ` (incluye ${money(c.msi)} a meses)` : ''} · meta: menos de 30%</small>` : ''}
-      ${(stByCard[c.id] || []).map((s) => `<div class="stmt">Pago para no generar intereses: <b>${money(s.remaining)}</b> antes del ${fmtDate(s.due)}${s.payFrom && s.payFrom > d.today ? ` · se puede pagar desde el ${fmtDate(s.payFrom)}` : ''}${s.paid ? ` · ya abonaste ${money(s.paid)}` : ''}</div>`).join('')}
-      <div class="row-actions">
-        <button class="btn small" data-action="pay" data-card="${esc(c.id)}">Pagar</button>
-        <button class="btn small ghost" data-action="stmt-new" data-card="${esc(c.id)}">Capturar estado de cuenta</button>
-        <button class="btn small ghost" data-action="adjust" data-acc="${esc(c.id)}">Ajustar saldo</button>
+    return `<article class="ccard">
+      <div class="ccard-head">
+        <div><p class="ccard-name">${esc(c.name)}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''}</p>
+        <p class="ccard-sub">${c.pay ? `Corte ${fmtDate(c.pay.cut, false)} · lo que compres hoy lo pagas el ${fmtDate(c.pay.due)}` : 'Sin fechas de corte'}</p></div>
+        <p class="ccard-owed">${bigMoney(c.owed)}</p>
       </div>
-    </div>`;
+      ${c.limit ? `<div class="meter ${tone}"><i style="width:${Math.min(100, Math.round((c.util || 0) * 100))}%"></i><span class="meter-mark"></span></div>
+      <p class="ccard-sub">Usas ${pct(c.util || 0)} de ${money(c.limit, { decimals: false })}${c.msi ? ` · incluye ${money(c.msi)} a meses` : ''}</p>` : ''}
+      ${(stByCard[c.id] || []).map((s) => `<div class="due">${icon('calendar', 18)}<p>Pago para no generar intereses <b>${money(s.remaining)}</b> antes del ${fmtDate(s.due)}${s.payFrom && s.payFrom > d.today ? `. Se puede pagar desde el ${fmtDate(s.payFrom)}` : ''}${s.paid ? `. Ya abonaste ${money(s.paid)}` : ''}</p></div>`).join('')}
+      <div class="ccard-actions">
+        <button class="btn sm" data-action="pay" data-card="${esc(c.id)}">${icon('pay', 16)}Pagar</button>
+        <button class="btn sm ghost" data-action="stmt-new" data-card="${esc(c.id)}">Estado de cuenta</button>
+        <button class="btn sm ghost" data-action="adjust" data-acc="${esc(c.id)}">Saldo real</button>
+      </div>
+    </article>`;
   }).join('')}
-  ${d.payPlan.length ? `<h2>Plan de pagos (lo antes posible)</h2><div class="card list">${d.payPlan.map((p) => `<div class="li"><span>${fmtDate(p.date)}</span><span class="grow">${esc(p.cardName)}${p.onDue ? ' · en su fecha' : ''}</span><b>${money(p.amount)}</b></div>`).join('')}</div>
-  <p class="muted">Se recalcula cada vez que registras algo. Siempre deja al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>` : '<div class="empty">No tienes pagos pendientes registrados. 🎉</div>'}`;
+  ${d.payPlan.length ? group('Plan de pagos', `<div class="panel">${d.payPlan.map((p) => item({
+    lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
+    title: esc(p.cardName), meta: p.onDue ? 'En su fecha límite' : 'Lo antes posible', trail: `<b class="amt">${money(p.amount)}</b>`,
+  })).join('')}</div><p class="foot">Se recalcula con cada movimiento y siempre deja al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>`)
+    : `<div class="empty">${icon('check', 28)}<p>Sin pagos pendientes registrados.</p></div>`}`;
 }
 
 export function planView(state, d) {
   const P = d.period;
-  const icon = { done: '✅', skipped: '⏭️', overdue: '⚠️', due: '⏳', pending: '·' };
-  return `<h1>Plan</h1>
-  <div class="card">
-    <div class="li"><span>Periodo</span><b>${fmtDate(P.s, false)} → ${fmtDate(P.e, false)} (${P.D} días)</b></div>
-    <div class="li"><span>Libre para gastar en el periodo</span><b>${money(d.libre)}</b></div>
-    <div class="li"><span>Base diaria</span><b>${money(d.base)}</b></div>
-    <div class="li"><span>Transporte apartado</span><b>${money(d.transport.budget)}</b></div>
-    <div class="li"><span>Dinero neto hoy (efectivo + banco − tarjetas)</span><b>${money(d.net)}</b></div>
-    <button class="btn small ghost" data-action="rebase">Repartir lo que queda en los días que faltan</button>
+  const st = { done: ['check', 'green'], skipped: ['skip', 'gray'], overdue: ['alert', 'amber'], due: ['clock', 'amber'], pending: ['clock', 'gray'] };
+  return `<header class="top"><p class="eyebrow">${fmtDate(P.s, false)} – ${fmtDate(P.e, false)} · ${P.D} días</p><h1>Plan</h1></header>
+  <div class="summary">
+    <div><small>Libre en el periodo</small><b>${money(d.libre)}</b></div>
+    <div><small>Base diaria</small><b>${money(d.base)}</b></div>
+    <div><small>Dinero neto hoy</small><b>${money(d.net)}</b></div>
   </div>
-  <h2>Lo planeado en este periodo</h2>
-  <div class="card list">${d.instances.map((i) => `
-    <div class="li"><span>${icon[i.status]}</span><span class="grow">${esc(i.name)}<small>${fmtDate(i.date)} · ${esc(accName(state, i.account))}</small></span>
-    <b class="${i.kind === 'income' ? 'pos' : ''}">${money(i.signed)}</b>
-    ${i.status === 'done' ? '' : `<button class="btn tiny ghost" data-action="${i.skipped ? 'inst-unskip' : 'inst-skip'}" data-id="${esc(i.id)}">${i.skipped ? 'Volver' : 'Saltar'}</button>`}</div>`).join('')}</div>
-  <h2>Reglas que se repiten</h2>
-  <div class="card list">${state.schedules.map((s) => `
-    <div class="li"><span class="grow">${esc(s.name)}<small>${describeRule(s.rule)} · ${esc(accName(state, s.account))}${s.autoPost ? ' · se registra solo' : ''}</small></span>
-    <b class="${s.kind === 'income' ? 'pos' : ''}">${money(s.amount)}</b>
-    <button class="btn tiny ghost" data-action="sched-edit" data-id="${esc(s.id)}">Editar</button></div>`).join('')}</div>
-  <button class="btn ghost" data-action="sched-new">＋ Agregar ingreso o gasto fijo</button>
-  <h2>Recordatorios</h2>
-  <div class="card">
-    <p>Las apps web no pueden avisarte solas. Agrega tus pagos a tu calendario:</p>
-    <button class="btn small" data-action="ics">Descargar calendario (.ics)</button>
-    <div class="list">${(d.reminders || []).map((e) => `<a class="li" href="${esc(e.gcal)}" target="_blank" rel="noopener"><span>${fmtDate(e.date)}</span><span class="grow">${esc(e.title)}</span><span>＋ Google</span></a>`).join('')}</div>
-  </div>`;
+  <p class="foot">Dinero neto = efectivo + banco − lo que debes en tarjetas. <button class="link" data-action="rebase">Repartir lo que queda en los días que faltan</button></p>
+
+  ${group('Este periodo', `<div class="panel">${d.instances.map((i) => item({
+    lead: `<span class="ic hue-${st[i.status][1]}">${icon(st[i.status][0], 18)}</span>`,
+    title: esc(i.name), meta: `${fmtDate(i.date)} · ${esc(accName(state, i.account))}`,
+    trail: `<span class="trail-col"><b class="amt ${i.kind === 'income' ? 'pos' : ''}">${money(i.signed, { sign: i.kind === 'income' })}</b>${i.status === 'done' ? '' : `<button class="link sm" data-action="${i.skipped ? 'inst-unskip' : 'inst-skip'}" data-id="${esc(i.id)}">${i.skipped ? 'Volver a contar' : 'Saltar'}</button>`}</span>`,
+  })).join('')}</div>`)}
+
+  ${group('Se repite', `<div class="panel">${state.schedules.map((s) => item({
+    action: `data-action="sched-edit" data-id="${esc(s.id)}"`,
+    lead: badge(s.kind === 'income' ? 'ingreso' : s.kind === 'savings' ? 'ahorro' : s.kind === 'msi' ? 'msi' : 'fijo'),
+    title: esc(s.name), meta: `${describeRule(s.rule)} · ${esc(accName(state, s.account))}${s.autoPost ? ' · automático' : ''}`,
+    trail: `<b class="amt ${s.kind === 'income' ? 'pos' : ''}">${money(s.amount)}</b>${icon('chevron', 16, 'mute')}`,
+  })).join('')}</div><button class="btn ghost wide" data-action="sched-new">${icon('plus', 18)}Agregar ingreso o gasto fijo</button>`)}
+
+  ${group('Recordatorios', `<div class="panel">
+    ${item({ lead: `<span class="ic hue-blue">${icon('bell', 18)}</span>`, title: 'Agrega tus pagos a tu calendario', meta: 'La app no puede avisarte sola; tu calendario sí.', trail: `<button class="btn sm ghost" data-action="ics">${icon('download', 16)}.ics</button>` })}
+    ${(d.reminders || []).map((e) => `<a class="item" href="${esc(e.gcal)}" target="_blank" rel="noopener">
+      <span class="date-chip"><b>${fmtDate(e.date, false).split(' ')[0]}</b>${fmtDate(e.date, false).split(' ')[1]}</span>
+      <span class="item-body"><span class="item-title">${esc(e.title)}</span><span class="item-meta">Agregar a Google Calendar</span></span>${icon('arrow', 16, 'mute')}</a>`).join('')}
+  </div>`)}`;
 }
 
 export function masView(state, d) {
@@ -165,79 +200,78 @@ export function masView(state, d) {
   const util = d.cards.filter((c) => c.util != null);
   const totalLimit = util.reduce((s, c) => s + c.limit, 0);
   const totalUsed = util.reduce((s, c) => s + c.owed + c.msi, 0);
-  return `<h1>Más</h1>
-  <h2>Consejos para tu historial</h2>
-  <div class="card tips">
-    ${totalLimit ? `<p>Usas <b>${pct(totalUsed / totalLimit)}</b> de tu crédito total (${money(totalUsed, { decimals: false })} de ${money(totalLimit, { decimals: false })}). Menos de 30% es bueno; menos de 10% es excelente.</p>` : ''}
-    <ul>
-      <li>Paga siempre el <b>pago para no generar intereses</b>. Nunca solo el mínimo.</li>
-      <li>Paga desde la cuenta del mismo banco o 2 días hábiles antes. Si la fecha cae en día inhábil, el banco la recorre, pero no lo dejes al final.</li>
-      <li>Deja 1–2 cargos chicos fijos en cada tarjeta (metro, Spotify, internet) y domicilia el pago para no generar intereses: así todas se mantienen activas.</li>
-      <li>Compras grandes: justo después del corte (hasta ~50 días para pagar en Santander/Banamex, ~40 en Nu).</li>
-      <li>Meses sin intereses solo si ya tienes el dinero: la app cuenta cada mensualidad en su mes.</li>
-      <li>Nunca saques efectivo con tarjeta de crédito, no abras más tarjetas y no canceles la más antigua.</li>
-      <li>Pide tu Reporte de Crédito Especial gratis una vez al año en Buró y en Círculo de Crédito.</li>
-    </ul>
-  </div>
+  const tips = [
+    ['check', 'Paga siempre el <b>pago para no generar intereses</b>. Nunca solo el mínimo.'],
+    ['clock', 'Paga desde el mismo banco o 2 días hábiles antes. Si la fecha cae en día inhábil se recorre, pero no lo dejes al final.'],
+    ['card', 'Deja 1 o 2 cargos chicos fijos en cada tarjeta y domicilia el pago: así todas se mantienen activas.'],
+    ['calendar', 'Compras grandes justo después del corte: hasta ~50 días para pagar en Santander y Banamex, ~40 en Nu.'],
+    ['msi', 'Meses sin intereses solo si ya tienes el dinero. La app cuenta cada mensualidad en su mes.'],
+    ['shield', 'No saques efectivo con tarjeta de crédito, no abras más tarjetas y no canceles la más antigua.'],
+    ['trend', 'Pide gratis tu Reporte de Crédito Especial una vez al año en Buró y en Círculo de Crédito.'],
+  ];
+  return `<header class="top"><p class="eyebrow">Ajustes y consejos</p><h1>Más</h1></header>
 
-  <h2>Mis cuentas</h2>
-  <div class="card list">${state.accounts.filter((a) => !a.archived).map((a) => `
-    <div class="li"><span class="grow">${esc(a.name)}<small>${{ bank: 'Banco', cash: 'Efectivo', savings: 'Alcancía (no se gasta)', card: 'Tarjeta de crédito' }[a.type]}</small></span>
-    <b>${money(d.balances[a.id] || 0)}</b><button class="btn tiny ghost" data-action="adjust" data-acc="${esc(a.id)}">Saldo real</button></div>`).join('')}</div>
+  ${totalLimit ? `<div class="summary"><div><small>Uso de tu crédito</small><b>${pct(totalUsed / totalLimit)}</b></div><div><small>De un total de</small><b>${money(totalLimit, { decimals: false })}</b></div></div>
+  <p class="foot">Menos de 30% es bueno para tu historial; menos de 10% es excelente.</p>` : ''}
 
-  <h2>Captura automática (Android)</h2>
-  <div class="card">
+  ${group('Para tu historial', `<div class="panel">${tips.map(([ic, t]) => `<div class="item"><span class="ic hue-gray">${icon(ic, 18)}</span><span class="item-body"><span class="item-text">${t}</span></span></div>`).join('')}</div>`)}
+
+  ${group('Mis cuentas', `<div class="panel">${state.accounts.filter((a) => !a.archived).map((a) => item({
+    action: `data-action="adjust" data-acc="${esc(a.id)}"`,
+    lead: `<span class="ic hue-gray">${icon(ACC_ICON[a.type], 18)}</span>`,
+    title: esc(a.name), meta: { bank: 'Banco', cash: 'Efectivo', savings: 'Alcancía, no se gasta', card: 'Lo que debes' }[a.type],
+    trail: `<b class="amt">${money(d.balances[a.id] || 0)}</b>${icon('adjust', 16, 'mute')}`,
+  })).join('')}</div><p class="foot">Toca una cuenta para poner su saldo real si no cuadra.</p>`)}
+
+  ${group('Captura automática', `<div class="panel pad">
     <ol class="steps">
-      <li>Instala <b>MacroDroid</b> (gratis) desde Play Store.</li>
-      <li>Nueva macro → Disparador: <b>Notificación recibida</b> → App: <b>Nu</b> (y tus apps de banco).</li>
-      <li>Acción: <b>Abrir sitio web / URL</b> y pega esta dirección:</li>
+      <li>Instala <b>MacroDroid</b> desde Play Store. La versión gratis alcanza.</li>
+      <li>Toca <b>Agregar macro</b>. En <i>Disparadores</i> elige <b>Notificación → Notificación recibida</b> y selecciona la app <b>Nu</b>.</li>
+      <li>En <i>Acciones</i> elige <b>Aplicaciones → Abrir sitio web/URL</b> y pega la dirección de abajo.</li>
+      <li>Guarda la macro y haz una compra de prueba (el metro sirve).</li>
     </ol>
     <textarea readonly class="mono" rows="3">${esc(macro)}</textarea>
-    <button class="btn small" data-action="copy-macro" data-text="${esc(macro)}">Copiar dirección</button>
-    <p class="muted">Cambia <code>src=nu</code> por el nombre corto de cada banco (${Object.keys(st.quickAdd?.sources || {}).map(esc).join(', ') || 'configúralo abajo'}). El metro se va solo a Transporte; lo demás queda "Por revisar". Las compras rechazadas y los pagos se ignoran.</p>
-    <p class="muted">También puedes mantener presionado el ícono de la app para registrar Metro o un gasto.</p>
-  </div>
+    <button class="btn sm" data-action="copy-macro" data-text="${esc(macro)}">${icon('copy', 16)}Copiar dirección</button>
+    <p class="foot">Para otro banco copia la macro y cambia <code>src=nu</code> por ${Object.keys(st.quickAdd?.sources || {}).filter((k) => k !== 'nu').map((k) => `<code>${esc(k)}</code>`).join(', ') || 'su nombre'}. El metro va solo a Transporte; lo demás queda en “Por revisar”.</p>
+  </div>`)}
 
-  <h2>Ajustes</h2>
-  <div class="card list">
-    <label class="li"><span class="grow">Transporte diario apartado</span><input type="number" inputmode="decimal" step="0.5" data-setting="transport.rate" value="${(st.transport?.rate || 0) / 100}"></label>
-    <label class="li"><span class="grow">Dinero mínimo que siempre dejo en la cuenta</span><input type="number" inputmode="decimal" data-setting="liquidityFloor" value="${(st.liquidityFloor || 0) / 100}"></label>
-    <label class="li"><span class="grow">Tarjeta/cuenta del transporte</span><select data-setting="transport.account">${state.accounts.filter((a) => a.type !== 'savings').map((a) => `<option value="${esc(a.id)}" ${a.id === st.transport?.account ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
-  </div>
+  ${group('Ajustes', `<div class="panel">
+    <label class="item"><span class="item-body"><span class="item-title">Transporte diario apartado</span></span><input type="number" inputmode="decimal" step="0.5" data-setting="transport.rate" value="${(st.transport?.rate || 0) / 100}"></label>
+    <label class="item"><span class="item-body"><span class="item-title">Mínimo que siempre dejo en la cuenta</span></span><input type="number" inputmode="decimal" data-setting="liquidityFloor" value="${(st.liquidityFloor || 0) / 100}"></label>
+    <label class="item"><span class="item-body"><span class="item-title">Con qué pago el transporte</span></span><select data-setting="transport.account">${state.accounts.filter((a) => a.type !== 'savings').map((a) => `<option value="${esc(a.id)}" ${a.id === st.transport?.account ? 'selected' : ''}>${esc(a.name)}</option>`).join('')}</select></label>
+  </div>`)}
 
-  <h2>Respaldo</h2>
-  <div class="card">
-    <p class="muted">Tus datos viven solo en este celular. Si borras los datos de Chrome sin respaldo, se pierden.</p>
-    <div class="row-actions">
-      <button class="btn small" data-action="backup">Respaldar (compartir)</button>
-      <button class="btn small ghost" data-action="import">Restaurar respaldo</button>
-      <button class="btn small ghost" data-action="config">Pegar código FB1</button>
+  ${group('Respaldo', `<div class="panel pad">
+    <p class="foot top0">Tus datos viven solo en este celular. Si borras los datos de Chrome sin respaldo, se pierden. Último respaldo: <b>${st.lastBackupAt ? fmtDate(st.lastBackupAt) : 'nunca'}</b>.</p>
+    <div class="pair wrap">
+      <button class="btn sm" data-action="backup">${icon('download', 16)}Respaldar</button>
+      <button class="btn sm ghost" data-action="import">${icon('upload', 16)}Restaurar</button>
+      <button class="btn sm ghost" data-action="config">${icon('code', 16)}Código FB1</button>
     </div>
     <input type="file" id="import-file" accept=".txt,.json,application/json,text/plain" hidden>
-    <p class="muted">Último respaldo: ${st.lastBackupAt ? fmtDate(st.lastBackupAt) : 'nunca'}</p>
-  </div>
-  <button class="btn ghost danger" data-action="reset">Borrar todo</button>
-  <p class="muted center">FinanciaBass · tus números nunca salen de tu celular</p>`;
+  </div>`)}
+  <button class="btn ghost danger wide" data-action="reset">${icon('trash', 18)}Borrar todo</button>
+  <p class="colophon">FinanciaBass · tus números nunca salen de tu celular</p>`;
 }
 
 export function onboardingView() {
   return `<section class="onboard">
+    <div class="brand-mark">${icon('savings', 30)}</div>
     <h1>FinanciaBass</h1>
-    <p>Sabe cada día cuánto puedes gastar, paga tus tarjetas a tiempo y ahorra lo que no uses.</p>
-    <div class="card">
-      <h2>¿Tienes un código de configuración?</h2>
-      <p class="muted">Empieza con <code>FB1.</code>. Trae tus cuentas, tarjetas, ingresos y pagos ya capturados.</p>
-      <textarea id="config-code" rows="4" placeholder="FB1...."></textarea>
-      <button class="btn" data-action="config-apply">Cargar mis datos</button>
+    <p class="lead">Cada día sabes cuánto puedes gastar. Pagas tus tarjetas a tiempo y lo que no uses se ahorra.</p>
+    <div class="panel pad">
+      <h2>¿Tienes un código?</h2>
+      <p class="foot top0">Empieza con <code>FB1.</code> y trae tus cuentas, tarjetas, ingresos y pagos.</p>
+      <textarea id="config-code" rows="4" placeholder="FB1…"></textarea>
+      <button class="btn wide" data-action="config-apply">Cargar mis datos</button>
     </div>
-    <div class="card">
-      <h2>¿Empezar desde cero?</h2>
-      <p class="muted">Crea una cuenta de banco y efectivo; después agregas tarjetas e ingresos en Plan y Más.</p>
-      <label class="li"><span class="grow">¿Cuánto tienes en el banco?</span><input id="ob-bank" type="number" inputmode="decimal"></label>
-      <label class="li"><span class="grow">¿Y en efectivo?</span><input id="ob-cash" type="number" inputmode="decimal"></label>
-      <button class="btn ghost" data-action="blank-start">Empezar</button>
+    <div class="panel pad">
+      <h2>Empezar desde cero</h2>
+      <label class="item"><span class="item-body"><span class="item-title">¿Cuánto tienes en el banco?</span></span><input id="ob-bank" type="number" inputmode="decimal"></label>
+      <label class="item"><span class="item-body"><span class="item-title">¿Y en efectivo?</span></span><input id="ob-cash" type="number" inputmode="decimal"></label>
+      <button class="btn ghost wide" data-action="blank-start">Empezar</button>
     </div>
-    <p class="muted center">Tus datos se guardan solo en este celular.</p>
+    <p class="colophon">${icon('shield', 16)} Tus datos se guardan solo en este celular.</p>
   </section>`;
 }
 
@@ -249,18 +283,19 @@ export function entrySheet(state, draft) {
     : draft.type === 'income' ? accs.filter((a) => a.type !== 'card')
       : draft.type === 'pay' ? liquidAccounts(state) : accs;
   const toList = draft.type === 'pay' ? accs.filter((a) => a.type === 'card') : accs;
-  const chips = (list, key, sel) => `<div class="chips">${list.map((a) => `<button type="button" class="chip ${a.id === sel ? 'on' : ''}" data-pick="${key}" data-val="${esc(a.id)}">${esc(a.name)}</button>`).join('')}</div>`;
+  const chips = (list, key, sel) => `<div class="chips">${list.map((a) => `<button type="button" class="chip ${a.id === sel ? 'on' : ''}" data-pick="${key}" data-val="${esc(a.id)}">${icon(ACC_ICON[a.type], 16)}${esc(a.name)}</button>`).join('')}</div>`;
   return `
-  <div class="tabs">${types.map(([k, l]) => `<button type="button" class="tab ${draft.type === k ? 'on' : ''}" data-pick="type" data-val="${k}">${l}</button>`).join('')}</div>
-  <div class="amount-display">${draft.type === 'adjust' ? '<small>Saldo real</small>' : ''}$<span>${esc(draft.amountText || '0')}</span></div>
-  <div class="keypad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', '⌫'].map((k) => `<button type="button" data-key="${k}">${k}</button>`).join('')}</div>
+  <div class="seg">${types.map(([k, l]) => `<button type="button" class="${draft.type === k ? 'on' : ''}" data-pick="type" data-val="${k}">${l}</button>`).join('')}</div>
+  <div class="amount-display">${draft.type === 'adjust' ? '<small>¿Cuánto hay realmente?</small>' : ''}<span class="cur">$</span><span class="num">${esc(draft.amountText || '0')}</span></div>
+  <div class="keypad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" data-key="${k}" ${k === 'del' ? 'aria-label="Borrar"' : ''}>${k === 'del' ? icon('backspace', 22) : k}</button>`).join('')}</div>
   <p class="label">${draft.type === 'income' ? 'Entra a' : draft.type === 'adjust' ? 'Cuenta' : draft.type === 'expense' ? 'Pagué con' : 'Sale de'}</p>
   ${chips(fromList, 'account', draft.account)}
   ${draft.type === 'pay' || draft.type === 'transfer' ? `<p class="label">${draft.type === 'pay' ? 'Tarjeta' : 'Hacia'}</p>${chips(toList.filter((a) => a.id !== draft.account), 'to', draft.to)}` : ''}
-  ${draft.type === 'expense' ? `<p class="label">Categoría</p><div class="chips">${CATEGORIES.map(([k, l]) => `<button type="button" class="chip ${draft.cat === k ? 'on' : ''}" data-pick="cat" data-val="${k}">${l}</button>`).join('')}</div>` : ''}
-  ${draft.type !== 'adjust' ? `<input class="desc" type="text" placeholder="Descripción (opcional)" value="${esc(draft.desc || '')}" data-field="desc">` : ''}
-  <label class="li"><span class="grow">Fecha</span><input type="date" value="${esc(draft.date)}" data-field="date"></label>
-  ${draft.id ? '<button type="button" class="btn ghost danger small" data-sheet-action="delete">Borrar movimiento</button>' : ''}
-  <button type="button" class="btn full" data-sheet-action="save">${draft.id ? 'Guardar cambios' : 'Guardar'}</button>`;
+  ${draft.type === 'expense' ? `<p class="label">Categoría</p><div class="chips">${CATEGORIES.map((k) => `<button type="button" class="chip ${draft.cat === k ? 'on' : ''}" data-pick="cat" data-val="${k}">${icon(catMeta(k).icon, 16)}${catMeta(k).label}</button>`).join('')}</div>` : ''}
+  <div class="fields">
+    ${draft.type !== 'adjust' ? `<input class="field" type="text" placeholder="Descripción (opcional)" value="${esc(draft.desc || '')}" data-field="desc">` : ''}
+    <input class="field" type="date" value="${esc(draft.date)}" data-field="date" aria-label="Fecha">
+  </div>
+  <button type="button" class="btn wide lg" data-sheet-action="save">${draft.id ? 'Guardar cambios' : 'Guardar'}</button>
+  ${draft.id ? `<button type="button" class="btn ghost danger wide" data-sheet-action="delete">${icon('trash', 18)}Borrar movimiento</button>` : ''}`;
 }
-

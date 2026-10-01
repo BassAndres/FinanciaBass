@@ -5,29 +5,34 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>FinanciaBass</title>
   <meta name="description" content="Cuánto puedo gastar hoy, pagos de tarjetas y ahorro.">
-  <meta name="theme-color" content="#0f766e">
+  <meta name="theme-color" content="#f3efe6" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0d1210" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-title" content="FinanciaBass">
   <link rel="manifest" href="./manifest.webmanifest">
   <link rel="icon" href="./icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap">
   <link rel="stylesheet" href="./css/app.css">
 </head>
 <body>
   <main id="main" class="wrap"></main>
 
-  <button id="fab" class="fab" type="button" aria-label="Registrar movimiento">＋</button>
+  <button id="fab" class="fab" type="button" aria-label="Registrar movimiento"><span data-icon="plus" data-size="26"></span></button>
   <nav class="tabbar" aria-label="Secciones">
-    <a href="#/hoy"><span>🏠</span>Hoy</a>
-    <a href="#/movs"><span>🧾</span>Movimientos</a>
-    <a href="#/tarjetas"><span>💳</span>Tarjetas</a>
-    <a href="#/plan"><span>🗓️</span>Plan</a>
-    <a href="#/mas"><span>⚙️</span>Más</a>
+    <a href="#/hoy"><span data-icon="home"></span>Hoy</a>
+    <a href="#/movs"><span data-icon="list"></span>Movimientos</a>
+    <a href="#/tarjetas"><span data-icon="card"></span>Tarjetas</a>
+    <a href="#/plan"><span data-icon="calendar"></span>Plan</a>
+    <a href="#/mas"><span data-icon="more"></span>Más</a>
   </nav>
 
   <div id="sheet" class="sheet" hidden>
     <div class="sheet-backdrop" data-close></div>
     <div class="sheet-panel" role="dialog" aria-modal="true">
-      <button type="button" class="sheet-x" data-close aria-label="Cerrar">✕</button>
+      <div class="sheet-grip"></div>
+      <button type="button" class="sheet-x" data-close aria-label="Cerrar"><span data-icon="x" data-size="18"></span></button>
       <div class="sheet-body"></div>
     </div>
   </div>

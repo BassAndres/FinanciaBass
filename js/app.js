@@ -6,6 +6,7 @@ import {
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid } from './ui/dom.js';
 import { hoyView, movsView, tarjetasView, planView, masView, onboardingView, entrySheet } from './ui/views.js';
+import { icon } from './ui/icons.js';
 
 let state = store.load();
 let dash = null;
@@ -93,10 +94,10 @@ function paintEntry() {
       const act = e.target.closest('[data-sheet-action]')?.dataset.sheetAction;
       if (k) {
         let t = draft.amountText || '';
-        if (k === '⌫') t = t.slice(0, -1);
+        if (k === 'del') t = t.slice(0, -1);
         else if (k === '.' ? !t.includes('.') : !/\.\d{2}$/.test(t)) t = (t === '0' && k !== '.' ? '' : t) + k;
         draft.amountText = t.slice(0, 10);
-        body.querySelector('.amount-display span').textContent = draft.amountText || '0';
+        body.querySelector('.amount-display .num').textContent = draft.amountText || '0';
       } else if (pick) {
         draft[pick.dataset.pick] = pick.dataset.val;
         if (pick.dataset.pick === 'type') { draft.account = defaultAccount(draft.type); draft.to = draft.type === 'pay' ? firstOf('card') : null; }
@@ -126,7 +127,7 @@ function saveEntry() {
     const real = parseAmount(draft.amountText) ?? 0;
     const current = balancesAt({ ...state, tx: state.tx.filter((t) => t.id !== draft.id) }, base.date)[draft.account] || 0;
     tx = { ...base, type: 'adjust', account: draft.account, amount: real - current, desc: 'Ajuste: saldo real' };
-    if (!tx.amount) { closeSheet(); return toast('El saldo ya coincide 👌'); }
+    if (!tx.amount) { closeSheet(); return toast('El saldo ya coincide'); }
   }
   if (draft.planRef) tx.planRef = draft.planRef;
   const editing = draft.id;
@@ -150,10 +151,10 @@ function editTx(id) {
 
 // ---------- hojas pequeñas ----------
 function formSheet(title, fields, onSave, extra = '') {
-  openSheet(`<h2>${esc(title)}</h2>${fields.map((f) => `<label class="li"><span class="grow">${esc(f.label)}</span>${
+  openSheet(`<h2>${esc(title)}</h2><div class="panel">${fields.map((f) => `<label class="item"><span class="item-body"><span class="item-title">${esc(f.label)}</span></span>${
     f.options ? `<select name="${f.name}">${f.options.map(([v, l]) => `<option value="${esc(v)}" ${String(v) === String(f.value) ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select>`
       : `<input name="${f.name}" type="${f.type || 'text'}" ${f.type === 'number' ? 'inputmode="decimal" step="0.01"' : ''} value="${esc(f.value ?? '')}" ${f.type === 'checkbox' && f.value ? 'checked' : ''}>`}</label>`).join('')}
-    ${extra}<button type="button" class="btn full" data-sheet-action="ok">Guardar</button>`, (body) => {
+    </div><button type="button" class="btn wide lg" data-sheet-action="ok">Guardar</button>${extra}`, (body) => {
     body.onclick = (e) => {
       const act = e.target.closest('[data-sheet-action]')?.dataset.sheetAction;
       if (!act) return;
@@ -187,7 +188,7 @@ function scheduleSheet(s) {
     const next = { ...s, name: v.name, kind: v.kind, amount, account: v.account, rule, autoPost: !!v.autoPost, end: v.end || undefined,
       to: v.kind === 'savings' ? (s.to || firstOf('savings')) : undefined, start: s.start || (isNew ? today() : undefined) };
     commit((st) => { const i = st.schedules.findIndex((x) => x.id === s.id); if (i >= 0) st.schedules[i] = next; else st.schedules.push(next); }, 'Guardado', true);
-  }, isNew ? '' : '<button type="button" class="btn ghost danger small" data-sheet-action="archive">Eliminar</button>');
+  }, isNew ? '' : `<button type="button" class="btn ghost danger wide" data-sheet-action="archive">${icon('trash', 18)}Eliminar</button>`);
 }
 
 function statementSheet(card) {
@@ -260,7 +261,7 @@ const actions = {
   'inst-unskip': (el) => commit((s) => { delete s.overrides[el.dataset.id]; }),
   'leftover-save'() {
     const l = dash.leftover;
-    commit((s) => { addTx(s, { type: 'transfer', account: firstOf('bank'), to: firstOf('savings'), amount: l.amount, date: l.date, cat: 'ahorro', desc: 'Sobrante del periodo' }); s.dismissed[l.key] = true; }, `${money(l.amount)} a tu alcancía 🐷`, true);
+    commit((s) => { addTx(s, { type: 'transfer', account: firstOf('bank'), to: firstOf('savings'), amount: l.amount, date: l.date, cat: 'ahorro', desc: 'Sobrante del periodo' }); s.dismissed[l.key] = true; }, `${money(l.amount)} a tu alcancía`, true);
   },
   'leftover-keep': () => commit((s) => { s.dismissed[dash.leftover.key] = true; }),
   rebase() {
@@ -280,7 +281,7 @@ const actions = {
   },
   import() { $('#import-file').click(); },
   config() {
-    openSheet(`<h2>Código de configuración</h2><textarea id="config-code" rows="5" placeholder="FB1...."></textarea><button type="button" class="btn full" data-sheet-action="apply">Cargar</button>`, (body) => {
+    openSheet(`<h2>Código de configuración</h2><p class="foot top0">Pega el código que empieza con FB1. Reemplaza todos tus datos.</p><textarea id="config-code" rows="5" placeholder="FB1…"></textarea><button type="button" class="btn wide lg" data-sheet-action="apply">Cargar</button>`, (body) => {
       body.onclick = (e) => { if (e.target.closest('[data-sheet-action]')) { closeSheet(); applyConfigCode($('#config-code', body).value); } };
     });
   },
@@ -373,6 +374,7 @@ function handleIntents() {
 }
 
 // ---------- arranque ----------
+document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon, Number(el.dataset.size) || 22); });
 $('#fab').onclick = () => (state ? openEntry({}) : null);
 render();
 handleIntents();

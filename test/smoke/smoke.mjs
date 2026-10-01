@@ -36,7 +36,7 @@ page.on('pageerror', (e) => errors.push(e.message));
 page.on('dialog', (d) => d.accept());
 
 await page.goto(base);
-await page.getByText('¿Tienes un código de configuración?').waitFor();
+await page.getByText('¿Tienes un código?').waitFor();
 await page.goto(`${base}#setup=${code}`);
 await page.reload();
 await page.locator('.hero-amount').waitFor();
@@ -66,7 +66,7 @@ assert.equal(await page.locator('.hero-amount').textContent(), '$17.50'); // el 
 // Notificación del banco sin token: pide confirmar.
 await page.goto(`${base}?raw=${encodeURIComponent('Compraste $40.00 en OXXO TONALA')}&src=nu`);
 await page.locator('.amount-display').waitFor();
-assert.equal(await page.locator('.amount-display span').textContent(), '40');
+assert.equal(await page.locator('.amount-display .num').textContent(), '40');
 
 // Todas las pantallas cargan.
 for (const r of ['movs', 'tarjetas', 'plan', 'mas', 'hoy']) {
