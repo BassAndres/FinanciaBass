@@ -121,6 +121,7 @@ export function computeDashboard(state, today) {
   const variable = state.tx.filter((x) => x.type === 'expense' && x.date >= s0 && x.date <= t && !ctx.isPlanned(x) && !ctx.isTransport(x));
   const variableSpent = variable.reduce((a, x) => a + x.amount, 0);
   const todayTx = state.tx.filter((x) => x.date === t && (x.type === 'expense' || x.type === 'income'));
+  const todayVariable = todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + (x.type === 'expense' ? x.amount : -x.amount), 0);
   const liquid = liquidOf(now.bal, accounts);
   const statements = statementStatus(state, accounts).filter((s) => s.remaining > 0);
   const cards = cardSummaries(state, now.bal, accounts, t);
@@ -133,10 +134,11 @@ export function computeDashboard(state, today) {
   return {
     today, period: P, k, D, daysLeft: D - k, libre, base, disponible, accrued: accrued(k), periodStart: s0,
     variableSpent, otherChanges: libre - now.R - variableSpent,
-    todaySpent: todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + (x.type === 'expense' ? x.amount : -x.amount), 0),
+    todaySpent: todayVariable,
     todayTx: todayTx.map((x) => ({ ...x, pooled: ctx.isTransport(x), planned: ctx.isPlanned(x) })),
     safeToSpend: Math.max(0, Math.min(disponible, liq.capped)),
     R: now.R, recovery, deficit: now.R < 0 || libre < 0,
+    startOfDay: disponible + todayVariable,
     net: netOf(now.bal, accounts), liquid, balances: now.bal,
     instances: now.status,
     prompts: now.status.filter((i) => (i.status === 'due' || i.status === 'overdue') && !i.autoPost),
@@ -221,4 +223,17 @@ export function instanceToTx(i, date, src = 'manual', amount = i.amount) {
   if (i.kind === 'income') return { type: 'income', account: i.account, amount, date, desc: i.name, cat: 'ingreso', planRef: i.id, src };
   if (i.kind === 'savings') return { type: 'transfer', account: i.account, to: i.to, amount, date, desc: i.name, cat: 'ahorro', planRef: i.id, src };
   return { type: 'expense', account: i.account, amount, date, desc: i.name, cat: i.kind === 'msi' ? 'msi' : 'fijo', planRef: i.id, src };
+}
+
+// Cómo te fue cada día: con cuánto empezaste, cuánto gastaste y con cuánto terminaste (lo que pasa al día siguiente).
+export function dayHistory(state, today, n = 7) {
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const d = addDays(today, -i);
+    const P = periodFor(state.settings, d);
+    if (P.notStarted || d < state.settings.firstStart) break;
+    const x = computeDashboard(state, d);
+    out.push({ date: d, start: x.disponible + x.todaySpent, spent: x.todaySpent, end: x.disponible, base: x.base, closed: d < today });
+  }
+  return out;
 }

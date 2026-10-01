@@ -1,7 +1,7 @@
 import {
   computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday, dateOf, year, month,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, emptyState, balancesAt,
-  reminderEvents, googleCalendarLink, buildICS, describeRule, TRANSPORT_RE,
+  reminderEvents, googleCalendarLink, buildICS, describeRule, TRANSPORT_RE, dayHistory,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid } from './ui/dom.js';
@@ -62,7 +62,13 @@ function render() {
   if (!state) { main.innerHTML = onboardingView(); return; }
   runAutoPost();
   const t = today();
+  // El plan empieza hoy (no mañana): si la fecha de inicio quedó en el futuro, se mueve a hoy.
+  if (state.settings.firstStart > t && t >= state.settings.openingDate) {
+    state.settings.firstStart = t;
+    store.save(state);
+  }
   dash = computeDashboard(state, t);
+  dash.history = dayHistory(state, t, 7);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt(t);
   const route = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';

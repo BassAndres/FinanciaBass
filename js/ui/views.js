@@ -53,11 +53,11 @@ export function hoyView(state, d) {
     <p class="hero-amount">${bigMoney(d.safeToSpend)}</p>
     ${d.disponible < 0 ? `<p class="hero-note">Vas ${money(d.disponible)} abajo${d.recovery ? `. Si ya no gastas, te recuperas el ${fmtDate(d.recovery)}.` : '.'}</p>` : ''}
     ${d.safeToSpend < d.disponible ? `<p class="hero-note">Llevas ${money(d.disponible)} acumulado; te muestro menos para que alcance a tus pagos.</p>` : ''}
-    <div class="hero-track"><i style="width:${Math.min(100, Math.round((d.k / d.D) * 100))}%"></i></div>
+    <div class="hero-track" title="Lo que llevas gastado de lo que tenías hoy"><i style="width:${d.startOfDay > 0 ? Math.min(100, Math.max(0, Math.round((d.todaySpent / d.startOfDay) * 100))) : 100}%"></i></div>
     <dl class="hero-stats">
-      <div><dt>Base diaria</dt><dd>${money(d.base)}</dd></div>
-      <div><dt>Quedan</dt><dd>${d.daysLeft} días</dd></div>
-      <div><dt>Transporte</dt><dd>${money(tr.spent, { decimals: false })}<small> / ${money(tr.budget, { decimals: false })}</small></dd></div>
+      <div><dt>Empezaste hoy con</dt><dd>${money(d.startOfDay)}</dd></div>
+      <div><dt>Gastado hoy</dt><dd>${money(Math.max(0, d.todaySpent))}</dd></div>
+      ${yesterdayStat(d)}
     </dl>
   </section>
 
@@ -86,10 +86,7 @@ export function hoyView(state, d) {
     trail: `<span class="pair"><button class="btn sm" data-action="review-ok" data-id="${t.id}">OK</button><button class="btn sm ghost" data-action="edit-tx" data-id="${t.id}">Editar</button></span>`,
   })).join('')}</div>`) : ''}
 
-  ${c ? group('Si hoy pagas con tarjeta', `<div class="panel">${item({
-    lead: `<span class="ic hue-green">${icon('card', 18)}</span>`, title: `Usa ${esc(c.name)}`,
-    meta: `La pagas hasta el ${fmtDate(c.pay.due)} (${c.pay.days} días) · uso ${c.util != null ? pct(c.util) : '—'}`,
-  })}</div>`) : ''}
+  ${moneyGroup(state, d)}
 
   ${upcoming.length ? group('Próximos pagos', `<div class="panel">${upcoming.map((p) => item({
     lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
@@ -98,6 +95,34 @@ export function hoyView(state, d) {
 
   ${staleBackup ? `<div class="notice">${icon('shield')}<p><b>Haz un respaldo.</b> Tus datos solo viven en este celular.</p><div class="notice-actions"><button class="btn sm ghost" data-action="backup">Respaldar</button></div></div>` : ''}
   `;
+}
+
+function yesterdayStat(d) {
+  const y = (d.history || [])[1];
+  if (!y) return `<div><dt>Base diaria</dt><dd>${money(d.base)}</dd></div>`;
+  return y.end >= 0
+    ? `<div><dt>Ayer te sobró</dt><dd class="up">+${money(y.end).slice(0)}</dd></div>`
+    : `<div><dt>Ayer te pasaste</dt><dd class="down">${money(-y.end)}</dd></div>`;
+}
+
+// Cuánto dinero tienes y en dónde, y con qué tarjeta conviene pagar hoy.
+function moneyGroup(state, d) {
+  const pockets = state.accounts.filter((a) => !a.archived && a.type !== 'card');
+  const rec = d.cardOfDay;
+  const cards = d.cards.filter((c) => c.limit);
+  return group('Tu dinero', `
+    <div class="pockets">${pockets.map((a) => `<button type="button" class="pocket" data-action="adjust" data-acc="${esc(a.id)}">
+      ${icon(ACC_ICON[a.type], 18)}<span>${esc(a.name)}</span><b>${money(d.balances[a.id] || 0)}</b></button>`).join('')}</div>
+    ${cards.length ? `<div class="panel">${cards.map((c) => {
+      const room = Math.max(0, Math.floor(c.limit * 0.3) - c.owed - c.msi);
+      const isRec = rec && rec.id === c.id;
+      return item({
+        lead: `<span class="ic ${isRec ? 'hue-ink' : 'hue-gray'}">${icon('card', 18)}</span>`,
+        title: `${esc(c.name)}${isRec ? ' <span class="badge">Mejor hoy</span>' : ''}${c.blocked ? ' <span class="tag">bloqueada</span>' : ''}`,
+        meta: isRec ? `Lo que compres hoy lo pagas hasta el ${fmtDate(c.pay.due, false)} (${c.pay.days} días)` : c.pay ? `Pagas lo de hoy hasta el ${fmtDate(c.pay.due, false)} (${c.pay.days} días)` : '',
+        trail: `<span class="trail-col"><b class="amt">${money(room, { decimals: false })}</b><small class="mute">${room ? 'sin pasar 30%' : 'ya pasaste 30%'}</small></span>`,
+      });
+    }).join('')}</div><p class="foot">Con tarjeta, usa la marcada como "Mejor hoy": te da más días para pagar y no subes tu uso de más del 30%. Tu número de hoy aplica igual en efectivo o tarjeta.</p>` : ''}`);
 }
 
 function todayGroup(state, d) {
@@ -136,6 +161,12 @@ export function movsView(state, d) {
   const catOf = (t) => (t.type === 'transfer' ? (t.cat === 'ahorro' ? 'ahorro' : t.cat === 'pago' ? 'pago' : 'mover') : t.type === 'adjust' ? 'ajuste' : t.type === 'income' ? 'ingreso' : t.cat);
   return `<header class="top"><p class="eyebrow">Desde el ${fmtDate(P.s)}</p><h1>Movimientos</h1></header>
     <div class="summary"><div><small>Gastado en el periodo</small><b>${money(spent)}</b></div><div><small>Movimientos</small><b>${list.length}</b></div></div>
+    ${(d.history || []).length ? group('Cómo te fue', `<div class="panel">${d.history.map((h) => item({
+      lead: `<span class="date-chip"><b>${fmtDate(h.date, false).split(' ')[0]}</b>${fmtDate(h.date, false).split(' ')[1]}</span>`,
+      title: h.closed ? (h.end >= 0 ? `Te sobraron ${money(h.end)}` : `Te pasaste ${money(-h.end)}`) : `Hoy: te quedan ${money(h.end)}`,
+      meta: `Empezaste con ${money(h.start)} · gastaste ${money(Math.max(0, h.spent))}`,
+      trail: `<span class="dot ${h.end >= 0 ? 'ok' : 'bad'}"></span>`,
+    })).join('')}</div><p class="foot">Lo que sobra (o lo que te pasas) se suma al día siguiente.</p>`) : ''}
     ${Object.keys(byDay).length ? Object.entries(byDay).map(([day, txs]) => group(fmtDate(day), `<div class="panel">${txs.map((t) => item({
       action: `data-action="edit-tx" data-id="${t.id}"`,
       lead: badge(catOf(t)),

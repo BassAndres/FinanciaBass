@@ -246,3 +246,16 @@ test('saldo antes del corte: no se sugiere pagar hasta el día siguiente al cort
   assert.equal(d.statements[0].payFrom, '2026-10-20'); // Tarjeta C corta el 19
   assert.ok(d.payPlan.every((p) => p.date >= '2026-10-20'), JSON.stringify(d.payPlan));
 });
+
+test('cómo te fue cada día: empezaste, gastaste, terminaste', async () => {
+  const { dayHistory } = await import('../../js/engine/budget.js');
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'efectivo', amount: 5000, date: '2026-10-01', cat: 'comida' }));
+  s.tx.push(tx({ type: 'expense', account: 'efectivo', amount: 1000, date: '2026-10-02', cat: 'comida' }));
+  const h = dayHistory(s, '2026-10-02', 7);
+  assert.deepEqual(h.map((x) => [x.date, x.start, x.spent, x.end]), [
+    ['2026-10-02', 1000, 1000, 0],
+    ['2026-10-01', 3000, 5000, -2000],
+  ]);
+  assert.equal(computeDashboard(s, '2026-10-02').startOfDay, 1000);
+});
