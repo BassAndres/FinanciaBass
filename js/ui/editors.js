@@ -257,7 +257,8 @@ export function statementSheet(card, stmt) {
     fields: [
       { name: 'amount', label: 'Pago para no generar intereses', type: 'money', value: pesos(stmt?.amount) },
       { name: 'due', label: 'Fecha límite de pago', type: 'date', value: stmt?.due || '' },
-      { name: 'payFrom', label: 'Se puede pagar desde', hint: 'Opcional (p. ej. después del corte)', type: 'date', value: stmt?.payFrom || '' },
+      { name: 'beforeCut', label: 'Todavía no corta', hint: 'Es lo que llevo gastado; se paga después del corte', type: 'checkbox', value: stmt?.beforeCut },
+      { name: 'payFrom', label: 'Se puede pagar desde', hint: 'Opcional', type: 'date', value: stmt?.payFrom || '' },
     ],
     extra: stmt ? [{ id: 'delete', label: 'Borrar este estado de cuenta', icon: 'trash', danger: true }] : [],
     onSave(act, v) {
@@ -265,8 +266,9 @@ export function statementSheet(card, stmt) {
       const amount = parseAmount(v.amount);
       if (!amount || !v.due) { toast('Pon monto y fecha límite'); return false; }
       ctx.commit((s) => {
-        if (stmt) Object.assign(s.statements.find((x) => x.id === stmt.id), { amount, due: v.due, payFrom: v.payFrom || undefined });
-        else s.statements.push({ id: uid(), card: acc.id, amount, due: v.due, payFrom: v.payFrom || undefined, createdAt: ctx.today() });
+        const data = { amount, due: v.due, payFrom: v.payFrom || undefined, beforeCut: !!v.beforeCut };
+        if (stmt) Object.assign(s.statements.find((x) => x.id === stmt.id), data);
+        else s.statements.push({ id: uid(), card: acc.id, ...data, createdAt: ctx.today() });
       }, 'Estado de cuenta guardado', true);
     },
   });

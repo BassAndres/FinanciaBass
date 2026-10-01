@@ -234,3 +234,15 @@ test('pagar en la fecha límite: no sugiere adelantos', () => {
   const d = computeDashboard(s, '2026-10-01');
   assert.deepEqual(d.payPlan.map((p) => [p.date, p.onDue, p.due]), [['2026-10-23', true, '2026-10-23']]);
 });
+
+test('saldo antes del corte: no se sugiere pagar hasta el día siguiente al corte', async () => {
+  const { migrate } = await import('../../js/engine/state.js');
+  const s = demoState();
+  s.schema = 1;
+  s.statements = [{ id: 'sc', card: 'tc', amount: 300000, due: '2026-11-01', createdAt: '2026-09-30' }];
+  const m = migrate(JSON.parse(JSON.stringify(s)));
+  assert.equal(m.statements[0].beforeCut, true);
+  const d = computeDashboard(m, '2026-10-01');
+  assert.equal(d.statements[0].payFrom, '2026-10-20'); // Tarjeta C corta el 19
+  assert.ok(d.payPlan.every((p) => p.date >= '2026-10-20'), JSON.stringify(d.payPlan));
+});

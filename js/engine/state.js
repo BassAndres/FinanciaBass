@@ -1,5 +1,5 @@
 // Forma de los datos guardados y migraciones entre versiones.
-export const SCHEMA = 1;
+export const SCHEMA = 2;
 
 export function emptyState(today) {
   return {
@@ -29,7 +29,11 @@ export function emptyState(today) {
 }
 
 const MIGRATIONS = {
-  // 2: (s) => { ...; return s; },
+  // v2: los saldos capturados al empezar eran "lo que llevas antes del corte": no se pueden pagar hasta que corta.
+  2: (s) => ({
+    ...s,
+    statements: (s.statements || []).map((st) => (!st.payFrom && st.createdAt === s.settings?.openingDate ? { ...st, beforeCut: true } : st)),
+  }),
 };
 
 export function migrate(data) {

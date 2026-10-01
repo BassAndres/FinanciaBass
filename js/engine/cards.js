@@ -40,7 +40,11 @@ export function statementStatus(state, accounts) {
     for (const s of list) {
       const applied = Math.min(paid, s.amount);
       paid -= applied;
-      out.push({ ...s, paid: applied, remaining: s.amount - applied, cardName: accounts[card]?.name || card });
+      // Saldo que aún no corta: el banco deja pagarlo a partir del día siguiente al corte.
+      const acc = accounts[card];
+      const cut = s.beforeCut && acc?.cutDay ? nextCut(acc, s.createdAt) : null;
+      const payFrom = s.payFrom || (cut ? addDays(cut, 1) : undefined);
+      out.push({ ...s, cut, payFrom, paid: applied, remaining: s.amount - applied, cardName: acc?.name || card });
     }
   }
   return out.sort((a, b) => (a.due < b.due ? -1 : 1));
