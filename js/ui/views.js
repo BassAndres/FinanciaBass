@@ -357,6 +357,12 @@ export function entrySheet(state, draft, candidates = []) {
   <div class="keypad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" data-key="${k}" ${k === 'del' ? 'aria-label="Borrar"' : ''}>${k === 'del' ? icon('backspace', 22) : k}</button>`).join('')}</div>
   <p class="label">${draft.type === 'income' ? 'Entra a' : draft.type === 'adjust' ? 'Cuenta' : draft.type === 'expense' ? 'Pagué con' : 'Sale de'}</p>
   ${chips(fromList, 'account', draft.account)}
+  ${draft.type === 'adjust' && draft.account ? `<p class="foot top0 adj-now">La app tiene ${money(draft.currentBal || 0)}${state.accounts.find((a) => a.id === draft.account)?.type === 'card' ? ' de deuda' : ''}. Escribe lo que dice tu banco o lo que traes.</p>
+    ${['bank', 'cash'].includes(state.accounts.find((a) => a.id === draft.account)?.type) ? `<p class="label">¿De dónde salió la diferencia?</p><div class="chips">
+      <button type="button" class="chip ${draft.adjReason !== 'move' ? 'on' : ''}" data-pick="adjReason" data-val="unknown">No sé / no lo registré</button>
+      <button type="button" class="chip ${draft.adjReason === 'move' ? 'on' : ''}" data-pick="adjReason" data-val="move">${icon('move', 16)}Lo pasé de/a otra cuenta</button></div>
+      ${draft.adjReason === 'move' ? `<div class="chips mt">${liquidAccounts(state).filter((a) => a.id !== draft.account).map((a) => `<button type="button" class="chip ${draft.moveFrom === a.id ? 'on' : ''}" data-pick="moveFrom" data-val="${esc(a.id)}">${icon(ACC_ICON[a.type], 16)}${esc(a.name)}</button>`).join('')}</div>
+      <p class="foot">Se registra como movimiento entre tus cuentas: no cambia lo que puedes gastar.</p>` : '<p class="foot">Si no sabes, se ajusta tal cual y tu número sube o baja por la diferencia.</p>'}` : ''}` : ''}
   ${draft.type === 'pay' || draft.type === 'transfer' ? `<p class="label">${draft.type === 'pay' ? 'Tarjeta' : 'Hacia'}</p>${chips(toList.filter((a) => a.id !== draft.account), 'to', draft.to)}` : ''}
   ${candidates.length ? `<p class="label">¿Es algo que ya tenías planeado?</p><div class="chips">
     <button type="button" class="chip ${!draft.planRef || draft.planRef === 'none' ? 'on' : ''}" data-pick="planRef" data-val="none">No, es otro ${draft.type === 'income' ? 'ingreso' : 'gasto'}</button>

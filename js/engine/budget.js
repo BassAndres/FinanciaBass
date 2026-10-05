@@ -15,9 +15,8 @@ import { expandSchedules, instanceDate } from './schedule.js';
 import { periodFor } from './periods.js';
 import { indexAccounts, balancesAt, netOf, liquidOf, txNetEffect, isLiquid } from './ledger.js';
 import { statementStatus, cardSummaries, recommendCard } from './cards.js';
-import { TRANSPORT_RE } from './quickadd.js';
+import { isPooledTransport } from './quickadd.js';
 
-const TRANSPORT = 'transporte';
 
 function transportDays(settings, from, to) {
   const t = settings.transport;
@@ -46,8 +45,7 @@ function periodContext(state, P) {
     return d <= P.e ? ids.has(tx.planRef) : schedIds.has(tx.planRef.slice(0, tx.planRef.lastIndexOf('@')));
   };
   // Solo el transporte diario (metro, metrobús…) sale de la bolsa; un Uber o taxi cuenta como gasto normal.
-  const isTransport = (tx) => tx.type === 'expense' && tx.cat === TRANSPORT && tx.date >= P.s && tx.date <= P.e && !tx.planRef &&
-    (tx.pool === true || (tx.pool !== false && TRANSPORT_RE.test(tx.desc || '')));
+  const isTransport = (tx) => tx.date >= P.s && tx.date <= P.e && !tx.planRef && isPooledTransport(tx);
   return { accounts, st, instances, ids, Q, isPlanned, isTransport };
 }
 

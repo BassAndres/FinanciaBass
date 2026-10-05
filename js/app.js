@@ -1,7 +1,7 @@
 import {
   computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday, dateOf, year, month,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, emptyState, balancesAt,
-  reminderEvents, googleCalendarLink, buildICS, describeRule, TRANSPORT_RE, dayHistory, monthOutlook,
+  reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid } from './ui/dom.js';
@@ -114,6 +114,9 @@ function planCandidates() {
 }
 
 function paintEntry() {
+  if (draft.type === 'adjust' && draft.account) {
+    draft.currentBal = balancesAt({ ...state, tx: state.tx.filter((t) => t.id !== draft.id) }, draft.date || today())[draft.account] || 0;
+  }
   openSheet(entrySheet(state, draft, planCandidates()), (body) => {
     body.onclick = (e) => {
       const k = e.target.closest('[data-key]')?.dataset.key;
@@ -166,6 +169,13 @@ function saveEntry() {
     const current = balancesAt({ ...state, tx: state.tx.filter((t) => t.id !== draft.id) }, base.date)[draft.account] || 0;
     tx = { ...base, type: 'adjust', account: draft.account, amount: real - current, desc: 'Ajuste: saldo real' };
     if (!tx.amount) { closeSheet(); return toast('El saldo ya coincide'); }
+    // "Lo pasé de otra cuenta": no es dinero nuevo ni perdido, es un movimiento (no cambia tu número).
+    if (draft.adjReason === 'move' && draft.moveFrom && !draft.id) {
+      const diff = tx.amount;
+      tx = diff > 0
+        ? { ...base, type: 'transfer', account: draft.moveFrom, to: draft.account, amount: diff, cat: 'mover', desc: 'Pasé dinero' }
+        : { ...base, type: 'transfer', account: draft.account, to: draft.moveFrom, amount: -diff, cat: 'mover', desc: 'Pasé dinero' };
+    }
   }
   if (draft.planRef && draft.planRef !== 'none') tx.planRef = draft.planRef;
   const editing = draft.id;
@@ -190,7 +200,7 @@ function saveEntry() {
 
 function savedMsg(tx) {
   if (lastLink) return `${money(tx.amount)} · lo tomé como ${lastLink.name} (ya estaba apartado)`;
-  if (tx.type === 'expense' && tx.cat === 'transporte' && (tx.pool === true || (tx.pool !== false && TRANSPORT_RE.test(tx.desc || '')))) return `${money(tx.amount)} · sale de tu apartado de transporte`;
+  if (isPooledTransport(tx)) return `${money(tx.amount)} · sale de tu apartado de transporte`;
   if (tx.type === 'expense') return `${money(tx.amount)} menos para hoy`;
   if (tx.type === 'income') return `+${money(tx.amount)} registrado`;
   return `${money(tx.amount || 0)} registrado`;

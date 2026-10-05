@@ -4,6 +4,11 @@
 import { parseAmount } from './money.js';
 import { diffDays } from './dates.js';
 
+// Uber, Didi, taxi…: son transporte pero no del diario; esos sí se descuentan de tu número.
+export const RIDE_RE = /\b(uber|didi|taxi|cabify|indrive|bolt|beat)\b/i;
+// ¿Este gasto sale del apartado diario de transporte? Todo lo de categoría Transporte salvo viajes en auto.
+export const isPooledTransport = (tx) => tx.type === 'expense' && tx.cat === 'transporte' &&
+  (tx.pool === true || (tx.pool !== false && !RIDE_RE.test(tx.desc || '')));
 export const TRANSPORT_RE = /metro|\bstc\b|metrob[uú]s|cableb[uú]s|tren ligero|troleb[uú]s|ecobici|bicicleta publ/i;
 const DECLINED_RE = /rechaz|declin|no (se )?(pudo|fue|autoriz)|fallid|insuficiente/i;
 const INCOMING_RE = /recib|abono|dep[oó]sito|gracias por tu pago|pago (aplicado|recibido)|transferencia (recibida|entrante)|reembolso/i;

@@ -289,3 +289,11 @@ test('migración v3: la fecha límite de un saldo antes del corte sale de la tar
   const m = migrate(JSON.parse(JSON.stringify(s)));
   assert.equal(m.statements[0].due, '2026-11-09'); // Tarjeta C: corte 19-oct, pago día 8 → dom 8-nov → lun 9-nov
 });
+
+test('transporte sin descripción (micro, combi) sale del apartado; Uber/Didi no', () => {
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 1700, date: '2026-10-01', cat: 'transporte', desc: '' }));
+  assert.equal(disp(s, '2026-10-01'), 3000);
+  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 8000, date: '2026-10-01', cat: 'transporte', desc: 'DiDi a casa' }));
+  assert.equal(disp(s, '2026-10-01'), 3000 - 8000);
+});

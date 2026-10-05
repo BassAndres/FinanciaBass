@@ -129,6 +129,21 @@ assert.equal(await page.evaluate(() => window.fb.dash.disponible), pre - 500 + 2
 await page.evaluate(() => { const st = window.fb.state; st.tx = st.tx.filter((t) => !(t.cat === 'reembolso' || t.desc === 'Amigo' || (t.amount === 1500 && t.account === 'banco'))); localStorage.setItem('financiabass:v1', JSON.stringify(st)); });
 await page.reload();
 
+// "Saldo real" explicado como dinero que pasé de otra cuenta: no cambia el número.
+const before2 = await page.evaluate(() => window.fb.dash.disponible);
+const bank0 = await page.evaluate(() => window.fb.dash.balances.banco);
+await page.goto(`${base}#/mas`);
+await page.click('[data-action="adjust"][data-acc="banco"]');
+for (const k of String((bank0 + 30000) / 100).split('')) await page.click(`.keypad [data-key="${k}"]`);
+await page.click('[data-pick="adjReason"][data-val="move"]');
+await page.click('[data-pick="moveFrom"][data-val="efectivo"]');
+await page.click('#sheet [data-sheet-action="save"]');
+assert.equal(await page.evaluate(() => window.fb.dash.disponible), before2);
+assert.equal(await page.evaluate(() => window.fb.dash.balances.banco), bank0 + 30000);
+assert.equal(await page.evaluate(() => window.fb.state.tx.at(-1).type), 'transfer');
+await page.evaluate(() => { const st = window.fb.state; st.tx.pop(); localStorage.setItem('financiabass:v1', JSON.stringify(st)); });
+await page.reload();
+
 // Todas las pantallas cargan.
 for (const r of ['movs', 'tarjetas', 'plan', 'mas', 'hoy']) {
   await page.goto(`${base}#/${r}`);

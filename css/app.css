@@ -294,3 +294,5 @@ textarea.mono { font-size: .76rem; word-break: break-all; }
 .outlook { margin-top: 12px; }
 .ol-title { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; color: var(--muted); font-weight: 700; font-size: .85rem; }
 .ol-big { margin: 0 0 8px; font-size: 1.15rem; font-weight: 800; letter-spacing: -.02em; }
+.chips.mt { margin-top: 8px; }
+.adj-now { margin-top: 10px; }
