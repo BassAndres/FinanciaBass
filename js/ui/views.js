@@ -357,6 +357,7 @@ export function masView(state, d) {
       <button class="btn sm" data-action="backup">${icon('download', 16)}Respaldar</button>
       <button class="btn sm ghost" data-action="import">${icon('upload', 16)}Restaurar</button>
       <button class="btn sm ghost" data-action="config">${icon('code', 16)}Código FB1</button>
+      <button class="btn sm ghost" data-action="auto-backups">${icon('clock', 16)}Copias automáticas</button>
     </div>
     <input type="file" id="import-file" accept=".txt,.json,application/json,text/plain" hidden>
   </div>`)}
@@ -388,7 +389,7 @@ export function entrySheet(state, draft, candidates = []) {
   ${draft.type === 'pay' || draft.type === 'transfer' ? `<p class="label">${draft.type === 'pay' ? 'Tarjeta' : 'Hacia'}</p>${chips(toList.filter((a) => a.id !== draft.account), 'to', draft.to)}` : ''}
   ${candidates.length ? `<p class="label">¿Es algo que ya tenías planeado?</p><div class="chips">
     <button type="button" class="chip ${!draft.planRef || draft.planRef === 'none' ? 'on' : ''}" data-pick="planRef" data-val="none">No, es otro ${draft.type === 'income' ? 'ingreso' : 'gasto'}</button>
-    ${candidates.map((i) => `<button type="button" class="chip ${draft.planRef === i.id ? 'on' : ''}" data-pick="planRef" data-val="${esc(i.id)}">${icon(i.kind === 'income' ? 'income' : 'pin', 16)}${esc(i.name)} · ${money(i.amount, { decimals: false })}</button>`).join('')}
+    ${candidates.map((i) => `<button type="button" class="chip ${draft.planRef === i.id ? 'on' : ''}" data-pick="planRef" data-val="${esc(i.id)}">${icon(i.kind === 'income' ? 'income' : 'pin', 16)}${esc(i.name)} · ${money(i.amount, { decimals: false })} · ${fmtDate(i.date, false)}</button>`).join('')}
   </div>` : ''}
   ${draft.type === 'expense' ? `<p class="label">Categoría</p><div class="chips">${CATEGORIES.map((k) => `<button type="button" class="chip ${draft.cat === k ? 'on' : ''}" data-pick="cat" data-val="${k}">${icon(catMeta(k).icon, 16)}${catMeta(k).label}</button>`).join('')}</div>` : ''}
   ${draft.type === 'income' ? `<p class="label">¿De quién?</p><div class="chips">${['Amigo', 'Mamá', 'Papá', 'Familia', 'Venta', 'Otro'].map((w) => `<button type="button" class="chip ${draft.desc === w ? 'on' : ''}" data-pick="desc" data-val="${w}">${w}</button>`).join('')}</div>` : ''}

@@ -13,7 +13,7 @@
 import { addDays, diffDays, weekday, eachDay, maxDate, dateOf, year, month } from './dates.js';
 import { expandSchedules, instanceDate } from './schedule.js';
 import { periodFor } from './periods.js';
-import { indexAccounts, balancesAt, netOf, liquidOf, txNetEffect, isLiquid } from './ledger.js';
+import { indexAccounts, balancesAt, netOf, liquidOf, txNetEffect, txDeltas, isLiquid } from './ledger.js';
 import { billsFor, cardSummaries, recommendCard } from './cards.js';
 import { isPooledTransport } from './quickadd.js';
 
@@ -45,7 +45,8 @@ function periodContext(state, P) {
     return d <= P.e ? ids.has(tx.planRef) : schedIds.has(tx.planRef.slice(0, tx.planRef.lastIndexOf('@')));
   };
   // Solo el transporte diario (metro, metrobús…) sale de la bolsa; un Uber o taxi cuenta como gasto normal.
-  const isTransport = (tx) => tx.date >= P.s && tx.date <= P.e && !tx.planRef && isPooledTransport(tx);
+  // Sin apartado de transporte (tarifa 0), todo cuenta como gasto normal.
+  const isTransport = (tx) => !!st.transport?.rate && tx.date >= P.s && tx.date <= P.e && !tx.planRef && isPooledTransport(tx);
   return { accounts, st, instances, ids, Q, isPlanned, isTransport };
 }
 
@@ -97,13 +98,16 @@ export function computeDashboard(state, today) {
 
   // libre: con el dinero del día anterior al periodo y todo lo planeado a su monto original.
   const before = evalAt(state, ctx, P, addDays(P.s, -1));
-  let libre = before.A + instances.reduce((s, i) => s + i.signed, 0) - Q;
+  // El colchón (lo mínimo que siempre dejas en tu cuenta) no se reparte: si no, al final del periodo no quedaría.
+  const raw = before.A + instances.reduce((s, i) => s + i.signed, 0) - Q;
+  const reserve = Math.min(st.liquidityFloor ?? 0, Math.max(0, raw));
+  let libre = raw - reserve;
   let s0 = P.s;
   let D = P.D;
   // "Repartir en los días que quedan": reinicia el reparto desde una fecha con lo que realmente quedaba.
   const rebase = (st.rebases || []).filter((r) => r > P.s && r <= t && r <= P.e).sort().pop();
   if (rebase) {
-    libre = evalAt(state, ctx, P, addDays(rebase, -1)).R;
+    libre = evalAt(state, ctx, P, addDays(rebase, -1)).R - reserve;
     s0 = rebase;
     D = diffDays(P.e, rebase) + 1;
   }
@@ -111,13 +115,13 @@ export function computeDashboard(state, today) {
   const now = evalAt(state, ctx, P, t);
   const k = Math.min(D, Math.max(1, diffDays(t, s0) + 1));
   const accrued = (kk) => Math.floor((libre * kk) / D);
-  const disponible = now.R - (libre - accrued(k));
+  const disponible = now.R - reserve - (libre - accrued(k));
 
   // Fecha en la que vuelves a tener saldo positivo si ya no gastas.
   let recovery = null;
   if (disponible < 0) {
     for (let kk = k + 1; kk <= D; kk++) {
-      if (now.R - libre + accrued(kk) >= 0) { recovery = addDays(s0, kk - 1); break; }
+      if (now.R - reserve - libre + accrued(kk) >= 0) { recovery = addDays(s0, kk - 1); break; }
     }
   }
 
@@ -137,11 +141,11 @@ export function computeDashboard(state, today) {
 
   return {
     today, period: P, k, D, daysLeft: D - k, libre, base, disponible, accrued: accrued(k), periodStart: s0,
-    variableSpent, otherChanges: libre - now.R - variableSpent,
+    variableSpent, otherChanges: libre + reserve - now.R - variableSpent, reserve,
     todaySpent: todayVariable,
     todayTx: todayTx.map((x) => ({ ...x, pooled: ctx.isTransport(x), planned: ctx.isPlanned(x) })),
     safeToSpend: Math.max(0, Math.min(disponible, liq.capped)),
-    R: now.R, recovery, deficit: now.R < 0 || libre < 0,
+    R: now.R, recovery, deficit: now.R < 0 || raw < 0,
     startOfDay: disponible + todayVariable,
     net: netOf(now.bal, accounts), liquid, balances: now.bal,
     instances: now.status,
@@ -170,6 +174,14 @@ function liquidity(state, ctx, P, t, { liquid, disponible, base, statements }) {
     const a = accounts[i.account];
     if (i.kind === 'income' && isLiquid(a)) { flow[idx] += i.amount; inflowDays.add(idx); }
     else if (i.kind !== 'income' && isLiquid(a)) { flow[idx] -= i.amount; causes[idx].push(i.name); }
+  }
+  // Movimientos ya registrados con fecha futura (p. ej. un pago programado): salen ese día.
+  for (const x of state.tx) {
+    if (x.date <= t) continue;
+    const idx = diffDays(x.date, t);
+    if (idx >= days) continue;
+    for (const [id, v] of Object.entries(txDeltas(x, accounts))) if (isLiquid(accounts[id])) flow[idx] += v;
+    if (x.type === 'expense' && isLiquid(accounts[x.account])) causes[idx].push(x.desc || 'gasto programado');
   }
   for (let idx = 1; idx < days; idx++) {
     const d = addDays(t, idx);

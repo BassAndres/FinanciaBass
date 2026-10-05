@@ -5,7 +5,12 @@ App web instalable (PWA) para saber **cuánto puedes gastar hoy**, pagar tus tar
 - **Hoy puedes gastar $X:** lo que no gastes se acumula para mañana. Si te pasas, los días siguientes bajan y la app te dice cuándo te recuperas.
 - **Tarjetas:** cortes, fechas límite (recorridas por días inhábiles CNBV), uso de tu límite y un plan para pagar lo antes posible sin quedarte sin dinero.
 - **Ingresos y fijos que se repiten:** sueldo, beca, suscripciones y MSI. Los cargos automáticos se registran solos.
-- **Captura rápida:** botones de Metro/Metrobús, atajos del ícono y registro automático de las notificaciones de tu banco con MacroDroid (Android).
+- **Para cualquier persona:** un asistente de bienvenida arma tu plan (cuentas, efectivo, tarjetas con su corte y fecha límite, ingresos, gastos fijos y transporte). Te pueden pagar a fin de mes, un día fijo, por quincena, por semana o cada 2 semanas.
+- **Captura automática:**
+  - **Android:** MacroDroid lee la notificación de **Google Wallet**, que llega al instante al pagar, y la del banco, para compras en línea. Si llegan las dos, la compra se registra una sola vez.
+  - **iPhone:** una automatización de Atajos (*Transacción* de Wallet) copia cada pago con Apple Pay, y en la app tocas **Pegar compra**.
+  - Los últimos 4 dígitos de cada tarjeta dicen con cuál pagaste.
+- **Android y iPhone:** se instala desde Chrome o Safari ("Agregar a pantalla de inicio").
 - **Privacidad:** tus números viven **solo en tu celular** (localStorage) y nada se sube a internet. Haz respaldos desde *Más → Respaldo*.
 
 ## Cómo calcula
@@ -16,7 +21,7 @@ libre      = N(día antes del periodo) + ingresos y gastos planeados − transpo
 disponible = lo que tienes hoy + lo planeado pendiente − (libre − libre·k/D)
 ```
 
-Una compra con tarjeta cuenta como gasto el día que la haces, y pagar la tarjeta solo mueve dinero, así que nada se cuenta dos veces. El periodo va de día de pago a día de pago, y el primero puede ser más largo (un "periodo de rescate").
+Una compra con tarjeta cuenta como gasto el día que la haces, y pagar la tarjeta solo mueve dinero, así que nada se cuenta dos veces. El periodo va de un día de pago al siguiente (configurable), y el primero puede ser más largo (un "periodo de rescate"). El colchón mínimo que dejas en tu cuenta no se reparte.
 
 ## Publicarla (GitHub Pages)
 
@@ -24,17 +29,19 @@ Una compra con tarjeta cuenta como gasto el día que la haces, y pagar la tarjet
 2. Elige la rama y la carpeta `/ (root)`, y guarda.
 3. Abre `https://<usuario>.github.io/FinanciaBass/` en Chrome (Android) → menú ⋮ → **Instalar app**.
 
-## Cargar tus datos
+## Empezar
 
-- **Código de configuración** `FB1.…`: pégalo en la pantalla inicial o en *Más → Pegar código FB1*.
-- También funciona como link: `https://…/FinanciaBass/#setup=FB1.…`
+- **Persona nueva:** abre la app y sigue el asistente. Todo se puede editar después en *Más → Editar*.
+- **Respaldo:** en la pantalla inicial toca *Restaurar un respaldo*.
+- **Código de configuración** `FB1.…`: también se acepta en la pantalla inicial o como link `https://…/FinanciaBass/#setup=FB1.…`.
 
-## Captura automática en Android (MacroDroid)
+## Captura automática
 
-1. Instala **MacroDroid**.
-2. Crea una macro con el disparador *Notificación recibida* de la app del banco.
-3. Como acción usa *Abrir sitio web* con la URL que te da la app en *Más* (incluye tu token personal).
-4. Lo del metro y metrobús se va a Transporte; lo demás queda "Por revisar". Las compras rechazadas y los pagos se ignoran.
+Las instrucciones paso a paso, con tu dirección personal (incluye un token), están en *Más → Captura automática*.
+
+- **Android (MacroDroid):** el disparador es *Notificación recibida* de Google Wallet o de tu banco. La acción es *Abrir sitio web* con `?raw={notification}&t={not_title}&via=wallet|bank&id={system_time}&k=<token>`.
+- **iPhone (Atajos):** el disparador es la automatización *Transacción*. Las acciones son *Texto* `FB|[Monto]|[Comerciante]|[Tarjeta]|[Fecha actual]` y *Copiar al portapapeles*. iOS no deja que un atajo abra una app web instalada, por eso se pega con un toque.
+- Las compras rechazadas y los pagos recibidos se ignoran. Lo que parece transporte va al apartado de transporte; lo demás queda en "Por revisar".
 
 ## Desarrollo
 

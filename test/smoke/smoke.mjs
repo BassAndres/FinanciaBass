@@ -195,6 +195,34 @@ assert.equal(await page.evaluate(() => window.fb.state.tx.at(-1).type), 'transfe
 await page.evaluate(() => { const st = window.fb.state; st.tx.pop(); localStorage.setItem('financiabass:v1', JSON.stringify(st)); });
 await page.reload();
 
+// "No, es otro ingreso" se respeta aunque el monto coincida con algo planeado ($800 de "Semana").
+await page.goto(`${base}#/hoy`);
+const pre3 = await page.evaluate(() => window.fb.dash.disponible);
+await page.click('[data-action="new-income"]');
+for (const k of ['8', '0', '0']) await page.click(`.keypad [data-key="${k}"]`);
+await page.click('[data-pick="account"][data-val="efectivo"]');
+await page.click('#sheet [data-sheet-action="save"]');
+assert.equal(await page.evaluate(() => window.fb.state.tx.at(-1).planRef), undefined);
+assert.equal(await page.evaluate(() => window.fb.dash.disponible), pre3 + 80000);
+// Teclado: ".50" son 50 centavos.
+await page.click('#fab');
+for (const k of ['.', '5', '0']) await page.click(`.keypad [data-key="${k}"]`);
+assert.equal(await page.locator('.amount-display .num').textContent(), '0.50');
+await page.click('#sheet [data-sheet-action="save"]');
+assert.equal(await page.evaluate(() => window.fb.state.tx.at(-1).amount), 50);
+// Otra pestaña (p. ej. MacroDroid) guarda una compra; lo que registres aquí no la borra.
+const page2 = await ctx.newPage();
+await page2.goto(`${base}?add=123&desc=Tacos&cat=comida&id=tab2&k=tok123`);
+await page2.locator('.hero-amount').waitFor();
+await page2.close();
+await page.click('#fab');
+for (const k of ['7']) await page.click(`.keypad [data-key="${k}"]`);
+await page.click('#sheet [data-sheet-action="save"]');
+assert.equal(await page.evaluate(() => window.fb.state.tx.filter((t) => t.desc === 'Tacos').length), 1);
+await page.evaluate(() => { const st = window.fb.state; st.tx = st.tx.slice(0, -4); localStorage.setItem('financiabass:v1', JSON.stringify(st)); });
+await page.reload();
+assert.equal(await page.evaluate(() => window.fb.dash.disponible), pre3);
+
 // Todas las pantallas cargan.
 for (const r of ['movs', 'tarjetas', 'plan', 'mas', 'hoy']) {
   await page.goto(`${base}#/${r}`);

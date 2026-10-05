@@ -6,7 +6,7 @@ import { emptyState } from '../../js/engine/state.js';
 export function demoState() {
   const s = emptyState('2026-09-30');
   Object.assign(s.settings, {
-    openingDate: '2026-09-30', firstStart: '2026-10-01', firstEnd: '2026-10-30', liquidityFloor: 30000, overdueGraceDays: 99,
+    openingDate: '2026-09-30', firstStart: '2026-10-01', firstEnd: '2026-10-30', liquidityFloor: 0, overdueGraceDays: 99,
     transport: { rate: 2000, account: 'tc', weekdays: [0, 1, 2, 3, 4, 5, 6] },
     quickAdd: { token: 'tok123', sources: { nu: 'tb' } },
   });

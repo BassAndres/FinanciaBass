@@ -4,9 +4,14 @@ export const toCents = (pesos) => Math.round(Number(pesos) * 100);
 export const toPesos = (cents) => cents / 100;
 
 // Acepta "25", "25.50", "1,234.50", "$1,234", "MX$5.00", "-5" y devuelve centavos (o null).
+// También acepta coma decimal ("12,50", "1.234,56") y montos que empiezan con punto (".50").
 export function parseAmount(text) {
   if (text == null) return null;
-  const m = String(text).replace(/\s/g, '').match(/-?\d[\d,]*(?:\.\d{1,2})?/);
+  let t = String(text).replace(/\s/g, '');
+  // Coma como separador decimal: "12,5", "12,50" o "1.234,56" (sin otro punto decimal después).
+  const eu = t.match(/-?\d{1,3}(?:\.\d{3})+,\d{1,2}(?!\d)|-?\d+,\d{1,2}(?![\d,.])/);
+  if (eu && !/\d,\d{3}(?!\d)/.test(eu[0])) t = t.replace(eu[0], eu[0].replace(/\./g, '').replace(',', '.'));
+  const m = t.match(/-?(?:\d[\d,]*(?:\.\d{1,2})?|\.\d{1,2})/);
   if (!m) return null;
   const n = Number(m[0].replace(/,/g, ''));
   return Number.isFinite(n) ? Math.abs(toCents(n)) : null;

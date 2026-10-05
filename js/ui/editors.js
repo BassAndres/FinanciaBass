@@ -103,7 +103,9 @@ export function accountSheet(a) {
         { name: 'opening', label: 'Saldo de hoy', hint: 'En tarjeta: lo que debes', type: 'money', value: '' }] : []),
       { name: 'limit', label: 'Límite de crédito', type: 'money', value: pesos(a.limit), when: { type: ['card'] } },
       { name: 'cutDay', label: 'Día de corte', options: MONTHDAYS.slice(0, 31), value: String(a.cutDay || 1), when: { type: ['card'] } },
-      { name: 'dueDay', label: 'Día límite de pago', hint: 'El que viene en tu estado de cuenta', options: MONTHDAYS.slice(0, 31), value: String(a.dueDay || ((a.cutDay || 1) + 19) % 31 + 1), when: { type: ['card'] } },
+      { name: 'dueMode', label: 'Fecha límite de pago', type: 'seg', value: a.dueDays ? 'days' : 'day', options: [['day', 'Un día del mes'], ['days', 'Días después del corte']], when: { type: ['card'] } },
+      { name: 'dueDay', label: 'Día límite de pago', hint: 'El que viene en tu estado de cuenta', options: MONTHDAYS.slice(0, 31), value: String(a.dueDay || ((a.cutDay || 1) + 19) % 31 + 1), when: { type: ['card'], dueMode: ['day'] } },
+      { name: 'dueDays', label: 'Días después del corte', hint: 'Ej. 20', type: 'int', value: a.dueDays || 20, when: { type: ['card'], dueMode: ['days'] } },
       { name: 'last4', label: 'Últimos 4 dígitos', hint: 'Para reconocer tus compras automáticas', type: 'int', value: a.last4 || '', placeholder: 'Opcional', when: { type: ['card', 'bank'] } },
       { name: 'blocked', label: 'Bloqueada (no recomendarla)', type: 'checkbox', value: a.blocked, when: { type: ['card'] } },
       ...(isNew ? [] : [{ name: 'type', type: 'hidden', value: a.type }]),
@@ -122,8 +124,9 @@ export function accountSheet(a) {
       const l4 = String(v.last4 || '').replace(/\D/g, '').slice(-4);
       if (l4.length === 4 && (type === 'card' || type === 'bank')) next.last4 = l4; else delete next.last4;
       if (type === 'card') {
-        Object.assign(next, { limit: parseAmount(v.limit) || 0, cutDay: Number(v.cutDay), dueDay: Number(v.dueDay), blocked: !!v.blocked });
-        delete next.dueDays;
+        Object.assign(next, { limit: parseAmount(v.limit) || 0, cutDay: Number(v.cutDay), blocked: !!v.blocked });
+        if (v.dueMode === 'days') { next.dueDays = Math.max(1, Math.min(60, parseInt(v.dueDays, 10) || 20)); delete next.dueDay; }
+        else { next.dueDay = Number(v.dueDay); delete next.dueDays; }
       }
       ctx.commit((s) => { const i = s.accounts.findIndex((x) => x.id === a.id); if (i >= 0) s.accounts[i] = next; else s.accounts.push(next); }, 'Guardado', true);
     },
@@ -190,7 +193,13 @@ export function scheduleSheet(s) {
           // La regla nueva empieza después del último registrado (mes siguiente si es mensual) para no duplicar.
           // Lo pendiente de este mes (si no estaba pagado) se vuelve a crear con los datos nuevos.
           const after = rule.type === 'monthly' || rule.type === 'semimonthly' ? dateOf(year(lastDone), month(lastDone) + 1, 1) : addDays(lastDone, 1);
-          st.schedules.push({ ...next, id: uid(), start: after });
+          // Lo de meses pasados sin registrar no se cobra con el monto nuevo: la regla nueva no registra solo
+          // nada antes de hoy, y se conservan los "saltar" y "no registrar solo" que ya habías marcado.
+          const nid = uid();
+          st.schedules.push({ ...next, id: nid, start: after, ...(next.autoPost ? { autoSince: next.autoSince > t ? next.autoSince : t } : {}) });
+          for (const [k, o] of Object.entries(st.overrides)) {
+            if (k.startsWith(`${s.id}@`) && k.split('@')[1] >= after) st.overrides[`${nid}@${k.split('@')[1]}`] = { ...o };
+          }
         } else {
           const i = st.schedules.findIndex((x) => x.id === s.id);
           if (i >= 0) st.schedules[i] = next; else st.schedules.push(next);
@@ -257,6 +266,7 @@ export function instanceSheet(inst) {
 // ---------- estados de cuenta ----------
 export function statementSheet(card, stmt, pre = {}) {
   const acc = ctx.state.accounts.find((a) => a.id === (stmt?.card || card));
+  if (!acc) return toast('Elige una tarjeta');
   formSheet({
     title: `Estado de cuenta · ${acc.name}`,
     subtitle: 'Lo que dice tu estado de cuenta o la app del banco.',
@@ -307,6 +317,7 @@ export function statementsList() {
       meta: `Antes del ${fmtDate(s.due)}`, open: () => statementSheet(s.card, s),
     })), 'Agregar estado de cuenta', () => {
       const cards = st.accounts.filter((a) => a.type === 'card' && !a.archived);
+      if (!cards.length) return toast('Primero agrega una tarjeta en Cuentas y tarjetas');
       formSheet({ title: '¿De qué tarjeta?', fields: [{ name: 'card', label: 'Tarjeta', options: cards.map((c) => [c.id, c.name]), value: cards[0]?.id }], saveLabel: 'Siguiente',
         onSave(_, v) { setTimeout(() => statementSheet(v.card), 0); } });
     });
@@ -368,7 +379,7 @@ export function breakdownSheet(d) {
   const other = d.otherChanges;
   openSheet(`<h2>¿Cómo sale tu número?</h2>
     <div class="panel pad breakdown">
-      ${row('Te tocan por día', money(d.base), '', `${money(d.libre)} libres ÷ ${d.D} días`)}
+      ${row('Te tocan por día', money(d.base), '', `${money(d.libre)} libres ÷ ${d.D} días${d.reserve ? ` (sin tu colchón de ${money(d.reserve)})` : ''}`)}
       ${row(`Acumulado al día ${d.k}`, money(d.accrued), '', d.k > 1 ? 'lo que no gastaste se suma' : '')}
       ${row('Gastado en el periodo', money(-d.variableSpent), 'neg', 'sin fijos ni metro')}
       ${other ? row(other > 0 ? 'Otros cambios' : 'A tu favor', money(-other, { sign: true }), other > 0 ? 'neg' : 'pos', other > 0 ? 'ingresos que no han llegado, fijos más caros, ajustes' : 'ingresos extra, fijos que no se cobraron') : ''}

@@ -1,5 +1,5 @@
 // Captura rápida por URL (atajos del ícono, MacroDroid) y lectura de notificaciones del banco.
-//   ?add=25&desc=Metro&m=joy&cat=transporte&id=<único>&k=<token>
+//   ?add=25&desc=Metro&m=tarjeta&cat=transporte&id=<único>&k=<token>
 //   ?raw=<texto de la notificación>&src=nu&id=<único>&k=<token>
 import { parseAmount } from './money.js';
 import { diffDays } from './dates.js';
@@ -9,10 +9,10 @@ export const RIDE_RE = /\b(uber|didi|taxi|cabify|indrive|bolt|beat)\b/i;
 // ¿Este gasto sale del apartado diario de transporte? Todo lo de categoría Transporte salvo viajes en auto.
 export const isPooledTransport = (tx) => tx.type === 'expense' && tx.cat === 'transporte' &&
   (tx.pool === true || (tx.pool !== false && !RIDE_RE.test(tx.desc || '')));
-export const TRANSPORT_RE = /\bmetro|\bstc\b|metrob[uú]s|cableb[uú]s|tren ligero|troleb[uú]s|ecobici|bicicleta publ|mexib[uú]s|macrob[uú]s|mi ?macro|metrorrey|suburbano|ecov[ií]a|transmetro|\bpasaje\b|\bcami[oó]n\b|tarjeta de movilidad|movilidad integrada/i;
+export const TRANSPORT_RE = /\bmetro(?:tap)?\b|\bautob\b|\bstc\b|metrob[uú]s|cableb[uú]s|tren ligero|troleb[uú]s|ecobici|bicicleta publ|mexib[uú]s|macrob[uú]s|mi ?macro|metrorrey|suburbano|ecov[ií]a|transmetro|\bpasaje\b|\bcami[oó]n\b|tarjeta de movilidad|movilidad integrada/i;
 const norm = (s) => String(s || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 const DECLINED_RE = /rechaz|declin|no (se )?(pudo|fue|autoriz)|fallid|insuficiente/i;
-const INCOMING_RE = /recib|abono|dep[oó]sito|gracias por tu pago|pago (aplicado|recibido)|transferencia (recibida|entrante)|reembolso/i;
+const INCOMING_RE = /recibiste|recibimos|has recibido|te (enviaron|depositaron|transfirieron)|abono a tu|dep[oó]sito (recibido|a tu)|dep[oó]sito|gracias por tu pago|pago (aplicado|recibido)|transferencia (recibida|entrante)|reembolso/i;
 
 // Últimos 4 dígitos de la tarjeta en el texto ("•••• 1234", "*1234", "terminación 1234", "termina en 1234").
 export function findLast4(text) {
@@ -21,8 +21,11 @@ export function findLast4(text) {
 }
 
 // Monto: el primero con signo de pesos ($, MX$, MXN); si no hay, el primer número con centavos.
+// Se salta montos que son tu saldo o tu límite ("tu saldo disponible es $3,400 tras tu compra de $120").
 function findAmount(text) {
-  const m = text.match(/(?:MX\$|\$|MXN\s?)\s?-?\d[\d,]*(?:\.\d{1,2})?/i) || text.match(/\d[\d,]*\.\d{2}\b/);
+  const all = [...text.matchAll(/(?:MX\$|\$|MXN\s?)\s?-?\d[\d,]*(?:\.\d{1,2})?/gi)];
+  const ok = all.filter((m) => !/(saldo|disponible|l[ií]mite|cr[eé]dito disponible)[^$]{0,25}$/i.test(text.slice(Math.max(0, m.index - 40), m.index)));
+  const m = ok[0] || all[0] || text.match(/\d[\d,]*\.\d{2}\b/);
   return m ? parseAmount(m[0].replace(/MXN/i, '')) : null;
 }
 
@@ -42,7 +45,8 @@ export function parseNotification(text, { title = '' } = {}) {
   const m = clean.match(/\b(?:en|at)\s+(.+?)(?:\s+con\b|\s+el\b|\s+por\b|\s+with\b|\s+using\b|[.,]\s|$)/i);
   // Si el título no trae el monto, normalmente es el comercio (Google Wallet).
   const titleMerchant = t && !findAmount(t) && !/compra|cargo|pago|wallet|transacci|notific/i.test(t) ? t : '';
-  const merchant = (m ? m[1] : titleMerchant || clean.replace(/(?:MX\$|\$)\s?[\d,]+(?:\.\d{1,2})?/, '').trim() || clean).slice(0, 60).trim();
+  const noAmt = (x) => x.replace(/(?:MX\$|\$)\s?[\d,]+(?:\.\d{1,2})?/g, '').replace(/\s+/g, ' ').trim();
+  const merchant = (noAmt(m ? m[1] : '') || titleMerchant || noAmt(clean).replace(/^(?:con|en|at|de)\s+/i, '') || clean).slice(0, 60).trim();
   const cat = TRANSPORT_RE.test(all) ? 'transporte' : null;
   return { amount, merchant, cat, last4: findLast4(all) };
 }
@@ -118,7 +122,7 @@ export function parseIntent(params, settings) {
     if (n.ignore) return { ignore: n.ignore, extId, trusted };
     return {
       trusted, extId, via, last4: n.last4, text: `${get('t')} ${raw}`,
-      tx: { type: 'expense', amount: n.amount, desc: n.merchant, cat: n.cat || get('cat') || 'otros', account, date, src: 'auto', review: !n.cat },
+      tx: { type: 'expense', amount: n.amount, desc: n.merchant, cat: n.cat || get('cat') || 'otros', account, date, src: 'capture', review: !n.cat },
     };
   }
   const amount = parseAmount(add);
@@ -127,7 +131,7 @@ export function parseIntent(params, settings) {
   return { trusted, extId, via, tx: { type: 'expense', amount, desc: get('desc') || 'Gasto', cat, account, date, src: 'url' } };
 }
 
-// ¿Este movimiento es algo que ya estaba planeado (TotalPass, el dinero de mamá, la beca…)? Entonces se liga a
+// ¿Este movimiento es algo que ya estaba planeado (una suscripción, el sueldo, la beca…)? Entonces se liga a
 // su instancia para no contarlo dos veces. Exige que coincida la cuenta, el nombre o el monto exacto.
 export function matchInstance(instances, tx) {
   const wantIncome = tx.type === 'income';

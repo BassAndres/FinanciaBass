@@ -21,15 +21,24 @@ const today = () => localToday();
 const main = $('#main');
 
 // ---------- estado ----------
+// Antes de cambiar algo se vuelve a leer lo guardado: otra pestaña o una captura automática (MacroDroid abre
+// la app en otra ventana) pudo haber guardado algo que esta copia en memoria no tiene.
+function refresh() {
+  const fresh = store.load();
+  if (fresh) state = fresh;
+}
+
 function commit(fn, msg, undoable = false) {
+  refresh();
   const before = JSON.stringify(state);
   fn(state);
-  store.save(state);
+  if (!store.save(state)) toast('No pude guardar: tu celular no tiene espacio. Haz un respaldo y borra datos de otras apps.');
   render();
+  if (typeof msg === 'function') msg = msg();
   if (msg) toast(msg, undoable ? { label: 'Deshacer', fn: () => { state = JSON.parse(before); store.save(state); render(); } } : null);
 }
 
-// Guarda un movimiento. Si corresponde a algo planeado (TotalPass, el dinero de mamá…) lo liga para no contarlo doble.
+// Guarda un movimiento. Si corresponde a algo planeado (una suscripción, el dinero que te dan cada semana…) lo liga para no contarlo doble.
 let lastLink = null;
 function addTx(s, tx) {
   const full = { id: uid(), ts: Date.now(), src: 'manual', ...tx };
@@ -55,6 +64,9 @@ function runAutoPost() {
 }
 
 const firstOf = (type) => state.accounts.find((a) => a.type === type && !a.archived)?.id;
+const liveAcc = (id) => (id && state.accounts.some((a) => a.id === id && !a.archived) ? id : null);
+// Cualquier cuenta con la que se pueda pagar (para usuarios sin efectivo o sin banco).
+const anySpendable = () => state.accounts.find((a) => !a.archived && a.type !== 'savings')?.id;
 
 // Android/Chrome: guardar el aviso de instalación para mostrar nuestro propio botón.
 let installEvent = null;
@@ -68,7 +80,7 @@ function render() {
   document.body.classList.toggle('no-state', !state);
   if (!state) {
     renderWizard(main, {
-      today, token: uid, toast, applyCode: applyConfigCode,
+      today, token: uid, toast, applyCode: applyConfigCode, loadError: store.loadError,
       finish: (s) => replaceState(s, '¡Listo! Este es tu número de hoy'),
     });
     return;
@@ -116,8 +128,8 @@ function openEntry(d) {
 
 function defaultAccount(type) {
   const last = state.settings.lastAccount?.[type];
-  if (last && state.accounts.some((a) => a.id === last)) return last;
-  return type === 'expense' ? firstOf('cash') || firstOf('bank') : firstOf('bank') || firstOf('cash');
+  if (liveAcc(last)) return last;
+  return (type === 'expense' ? firstOf('cash') || firstOf('bank') : firstOf('bank') || firstOf('cash')) || anySpendable();
 }
 
 // Cosas planeadas que este movimiento podría ser (para no contarlas doble).
@@ -140,7 +152,7 @@ function paintEntry() {
       if (k) {
         let t = draft.amountText || '';
         if (k === 'del') t = t.slice(0, -1);
-        else if (k === '.' ? !t.includes('.') : !/\.\d{2}$/.test(t)) t = (t === '0' && k !== '.' ? '' : t) + k;
+        else if (k === '.' ? !t.includes('.') : !/\.\d{2}$/.test(t)) t = (t === '0' && k !== '.' ? '' : t === '' && k === '.' ? '0' : t) + k;
         draft.amountText = t.slice(0, 10);
         body.querySelector('.amount-display .num').textContent = draft.amountText || '0';
       } else if (pick) {
@@ -171,13 +183,14 @@ function paintEntry() {
 function saveEntry() {
   const amount = parseAmount(draft.amountText);
   if (draft.type !== 'adjust' && !amount) return toast('Escribe el monto');
-  if (!draft.account) return toast('Elige la cuenta');
+  if (!liveAcc(draft.account)) return toast('Elige la cuenta');
+  if (draft.type === 'adjust' && !String(draft.amountText || '').trim()) return toast('Escribe cuánto hay realmente');
   const base = { date: draft.date || today(), desc: (draft.desc || '').trim() };
   let tx;
   if (draft.type === 'expense') tx = { ...base, type: 'expense', account: draft.account, amount, cat: draft.cat || 'otros', ...(draft.pool != null ? { pool: draft.pool } : {}) };
   else if (draft.type === 'income') tx = { ...base, type: 'income', account: draft.account, amount, cat: 'ingreso' };
   else if (draft.type === 'pay' || draft.type === 'transfer') {
-    if (!draft.to) return toast('Elige a dónde va');
+    if (!liveAcc(draft.to) || draft.to === draft.account) return toast('Elige a dónde va');
     tx = { ...base, type: 'transfer', account: draft.account, to: draft.to, amount, cat: draft.type === 'pay' ? 'pago' : 'mover', desc: base.desc || (draft.type === 'pay' ? 'Pago de tarjeta' : '') };
   } else {
     const real = parseAmount(draft.amountText) ?? 0;
@@ -192,7 +205,8 @@ function saveEntry() {
         : { ...base, type: 'transfer', account: draft.account, to: draft.moveFrom, amount: -diff, cat: 'mover', desc: 'Pasé dinero' };
     }
   }
-  if (draft.planRef && draft.planRef !== 'none') tx.planRef = draft.planRef;
+  // "No, es otro" se respeta: addTx no intenta ligarlo a nada planeado.
+  if (draft.planRef) tx.planRef = draft.planRef;
   const editing = draft.id;
   commit((s) => {
     s.settings.lastAccount = { ...(s.settings.lastAccount || {}), [draft.type]: draft.account };
@@ -204,18 +218,18 @@ function saveEntry() {
       const saved = addTx(s, tx);
       const refund = draft.type === 'expense' ? parseAmount(draft.refund) : 0;
       if (refund) {
-        addTx(s, { type: 'income', account: draft.refundAccount || firstOf('cash'), amount: Math.min(refund, amount), date: tx.date,
+        addTx(s, { type: 'income', account: liveAcc(draft.refundAccount) || firstOf('cash') || firstOf('bank') || draft.account, amount: Math.min(refund, amount), date: tx.date,
           cat: 'reembolso', desc: `Me regresaron · ${tx.desc || 'gasto'}`, planRef: 'none', group: saved.id });
         lastLink = null;
       }
     }
-  }, editing ? 'Cambios guardados' : (parseAmount(draft.refund) && draft.type === 'expense' ? `Gastaste ${money(amount - Math.min(parseAmount(draft.refund), amount))} netos` : savedMsg(tx)), true);
+  }, () => (editing ? 'Cambios guardados' : (parseAmount(draft.refund) && draft.type === 'expense' ? `Gastaste ${money(amount - Math.min(parseAmount(draft.refund), amount))} netos` : savedMsg(tx))), true);
   closeSheet();
 }
 
 function savedMsg(tx) {
   if (lastLink) return `${money(tx.amount)} · lo tomé como ${lastLink.name} (ya estaba apartado)`;
-  if (isPooledTransport(tx)) return `${money(tx.amount)} · sale de tu apartado de transporte`;
+  if (state.settings.transport?.rate && isPooledTransport(tx)) return `${money(tx.amount)} · sale de tu apartado de transporte`;
   if (tx.type === 'expense') return `${money(tx.amount)} menos para hoy`;
   if (tx.type === 'income') return `+${money(tx.amount)} registrado`;
   return `${money(tx.amount || 0)} registrado`;
@@ -264,7 +278,8 @@ function applyConfigCode(code) {
 const actions = {
   fare(el) {
     const f = state.settings.fares[Number(el.dataset.i)];
-    const account = state.settings.transport?.account || defaultAccount('expense');
+    const account = liveAcc(state.settings.transport?.account) || defaultAccount('expense');
+    if (!account) return toast('Primero agrega una cuenta en Más → Editar');
     commit((s) => addTx(s, { type: 'expense', account, amount: f.amount, cat: 'transporte', desc: f.name, date: today(), pool: true }),
       `${f.name} ${money(f.amount)} · sale de tu apartado de transporte`, true);
   },
@@ -307,7 +322,7 @@ const actions = {
   'inst-unskip': (el) => commit((s) => { const o = { ...(s.overrides[el.dataset.id] || {}) }; delete o.status; s.overrides[el.dataset.id] = o; }),
   'leftover-save'() {
     const l = dash.leftover;
-    commit((s) => { addTx(s, { type: 'transfer', account: firstOf('bank'), to: firstOf('savings'), amount: l.amount, date: l.date, cat: 'ahorro', desc: 'Sobrante del periodo' }); s.dismissed[l.key] = true; }, `${money(l.amount)} a tu alcancía`, true);
+    commit((s) => { addTx(s, { type: 'transfer', account: firstOf('bank') || firstOf('cash'), to: firstOf('savings'), amount: l.amount, date: l.date, cat: 'ahorro', desc: 'Sobrante del periodo' }); s.dismissed[l.key] = true; }, `${money(l.amount)} a tu alcancía`, true);
   },
   'leftover-keep': () => commit((s) => { s.dismissed[dash.leftover.key] = true; }),
   rebase() {
@@ -326,6 +341,25 @@ const actions = {
     if (ok) commit((s) => { s.settings.lastBackupAt = today(); }, 'Respaldo listo');
   },
   import() { $('#import-file').click(); },
+  async 'recovery-download'() {
+    const raw = store.recoveryData();
+    if (raw) await shareOrDownload(`financiabass-recuperado-${today()}.txt`, raw, 'text/plain');
+  },
+  'auto-backups'() {
+    const list = store.listBackups();
+    openSheet(`<h2>Copias automáticas</h2><p class="foot top0">Cada día, antes del primer cambio, guardo cómo estaban tus datos (últimos 7 días, solo en este celular).</p>
+      <div class="panel">${list.map((b, i) => `<button type="button" class="item" data-i="${i}"><span class="ic hue-gray">${icon('clock', 18)}</span><span class="item-body"><span class="item-title">Como estaban el ${esc(b.date)}</span><span class="item-meta">Toca para restaurar</span></span>${icon('chevron', 16, 'mute')}</button>`).join('') || '<div class="empty small">Todavía no hay copias</div>'}</div>`, (body) => {
+      body.onclick = (e) => {
+        const i = e.target.closest('[data-i]')?.dataset.i;
+        if (i == null) return;
+        try {
+          const data = store.restoreBackup(Number(i));
+          if (!confirm('Esto reemplaza tus datos actuales con esa copia. ¿Continuar?')) return;
+          closeSheet(); replaceState(data, 'Copia restaurada');
+        } catch (err) { toast(err.message); }
+      };
+    });
+  },
   config() {
     openSheet(`<h2>Código de configuración</h2><p class="foot top0">Pega el código que empieza con FB1. Reemplaza todos tus datos.</p><textarea id="config-code" rows="5" placeholder="FB1…"></textarea><button type="button" class="btn wide lg" data-sheet-action="apply">Cargar</button>`, (body) => {
       body.onclick = (e) => { if (e.target.closest('[data-sheet-action]')) { closeSheet(); applyConfigCode($('#config-code', body).value); } };
@@ -338,7 +372,7 @@ const actions = {
   reset() {
     if (!confirm('¿Borrar TODOS tus datos de este celular?')) return;
     if (!confirm('De verdad: no se puede deshacer. ¿Hiciste respaldo?')) return;
-    store.reset(); clearWizard(); state = null; location.hash = ''; render();
+    store.reset(true); clearWizard(); state = null; location.hash = ''; render();
   },
 };
 
@@ -369,7 +403,9 @@ document.addEventListener('change', async (e) => {
 });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') render(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refresh(); render(); } });
+// Otra pestaña guardó algo: lo tomo para no pisarlo.
+window.addEventListener('storage', (e) => { if (e.key === store.KEY) { refresh(); if (!document.querySelector('#sheet:not([hidden])')) render(); } });
 
 // ---------- entrada por URL (atajos, MacroDroid, compartir) ----------
 function handleIntents() {
@@ -394,10 +430,11 @@ function handleIntents() {
   if (intent.ignore) return toast(`No registré la notificación: ${intent.ignore}`);
   const tx = intent.tx;
   tx.date ||= today();
-  if (!state.accounts.some((a) => a.id === tx.account && !a.archived)) {
+  if (!liveAcc(tx.account)) {
     tx.account = resolveAccount(state.accounts, { src: tx.account, last4: intent.last4, text: intent.text, sources: state.settings.quickAdd?.sources })
-      || (tx.cat === 'transporte' ? state.settings.transport?.account : null) || defaultAccount('expense');
+      || (tx.cat === 'transporte' ? liveAcc(state.settings.transport?.account) : null) || defaultAccount('expense');
   }
+  if (!tx.account) return openEntry({ type: 'expense', cat: tx.cat, desc: tx.desc, date: tx.date, amountText: String(tx.amount / 100) });
   if (intent.trusted) captureTx(tx, intent.via, intent.extId);
   else openEntry({ type: 'expense', account: tx.account, cat: tx.cat, desc: tx.desc, date: tx.date, amountText: String(tx.amount / 100) });
 }
@@ -414,7 +451,7 @@ function captureTx(tx, via, extId, quiet = false) {
       if (!x.account && tx.account) x.account = tx.account;
     } else addTx(s, { ...tx, via, seenBy: [via] });
     if (extId) s.processedExtIds = [...s.processedExtIds, extId].slice(-500);
-  }, quiet ? null : dup ? `Ya lo tenía: ${money(tx.amount)} ${dup.desc || ''}` : `Registrado: ${money(tx.amount)} ${tx.desc || ''}`, !dup);
+  }, quiet ? null : () => dup ? `Ya lo tenía: ${money(tx.amount)} ${dup.desc || ''}` : `Registrado: ${money(tx.amount)} ${tx.desc || ''}`, !dup);
   return dup ? 'dup' : 'new';
 }
 
@@ -434,8 +471,8 @@ async function pasteCapture(text) {
   let added = 0, dups = 0, seen = 0;
   for (const l of lines) {
     const account = resolveAccount(state.accounts, { last4: l.last4, text: l.card, sources: state.settings.quickAdd?.sources })
-      || (l.cat === 'transporte' ? state.settings.transport?.account : null) || defaultAccount('expense');
-    const r = captureTx({ type: 'expense', amount: l.amount, desc: l.merchant, cat: l.cat || 'otros', account, date: today(), src: 'auto', review: !l.cat }, 'wallet', l.extId, true);
+      || (l.cat === 'transporte' ? liveAcc(state.settings.transport?.account) : null) || defaultAccount('expense');
+    const r = captureTx({ type: 'expense', amount: l.amount, desc: l.merchant, cat: l.cat || 'otros', account, date: today(), src: 'capture', review: !l.cat }, 'wallet', l.extId, true);
     if (r === 'new') added++; else if (r === 'dup') dups++; else seen++;
   }
   toast(added ? `${added} compra${added > 1 ? 's' : ''} registrada${added > 1 ? 's' : ''}${dups ? ` (${dups} ya estaba)` : ''}. Revísalas en Hoy.` : 'Esas compras ya estaban registradas');
