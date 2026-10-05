@@ -318,3 +318,20 @@ test('plan de pagos sigue el saldo real: compras con tarjeta se suman al pago de
   s.tx.push(tx({ type: 'transfer', account: 'banco', to: 'tb', amount: 4000, date: '2026-10-30' }));
   assert.equal(computeDashboard(s, '2026-10-30').statements.find((x) => x.card === 'tb').remaining, 50000);
 });
+
+test('el día del corte: pagar la deuda y comprar ese mismo día; la compra va al siguiente corte', () => {
+  const s = demoState(); // Tarjeta A: corte 4, pago 24, debe 2,000 (estado capturado, límite 23-oct)
+  s.tx.push(tx({ type: 'transfer', account: 'banco', to: 'ta', amount: 200000, date: '2026-10-04' }));
+  s.tx.push(tx({ type: 'expense', account: 'ta', amount: 34500, date: '2026-10-04', cat: 'comida' }));
+  const d = computeDashboard(s, '2026-10-04');
+  const ta = d.statements.filter((x) => x.card === 'ta');
+  assert.deepEqual(ta.map((x) => [x.remaining, x.cut, x.due]), [[34500, '2026-11-04', '2026-11-24']]);
+  assert.equal(d.cards.find((c) => c.id === 'ta').pay.due, '2026-11-24');
+  // Sin estado capturado: lo debido antes del corte es el pago; lo del día del corte va al siguiente.
+  const s2 = demoState();
+  s2.statements = [];
+  s2.tx.push(tx({ type: 'expense', account: 'ta', amount: 10000, date: '2026-10-02', cat: 'comida' }));
+  s2.tx.push(tx({ type: 'expense', account: 'ta', amount: 34500, date: '2026-10-04', cat: 'comida' }));
+  const d2 = computeDashboard(s2, '2026-10-05');
+  assert.deepEqual(d2.statements.filter((x) => x.card === 'ta').map((x) => [x.remaining, x.cut]), [[210000, '2026-10-04'], [34500, '2026-11-04']]);
+});
