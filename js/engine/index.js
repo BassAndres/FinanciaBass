@@ -10,3 +10,4 @@ export * from './quickadd.js';
 export * from './configcode.js';
 export * from './ics.js';
 export * from './state.js';
+export * from './setup.js';

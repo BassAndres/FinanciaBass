@@ -42,6 +42,7 @@ export function hoyView(state, d) {
     `<button class="tile" data-action="new" data-cat="comida">${icon('food', 22)}<span>Comida</span><b>&nbsp;</b></button>`,
     `<button class="tile" data-action="new" data-cat="antojos">${icon('treat', 22)}<span>Antojo</span><b>&nbsp;</b></button>`,
     `<button class="tile" data-action="new-income">${icon('income', 22)}<span>Me dieron</span><b>dinero</b></button>`,
+    ...(d.env?.os === 'ios' || state.settings.capture?.paste ? [`<button class="tile" data-action="paste">${icon('paste', 22)}<span>Pegar</span><b>compra</b></button>`] : []),
     `<button class="tile" data-action="new">${icon('plus', 22)}<span>Otro</span><b>&nbsp;</b></button>`,
   ].join('');
 
@@ -93,8 +94,19 @@ export function hoyView(state, d) {
     title: esc(p.cardName), meta: p.onDue ? 'Fecha límite' : `Adelanto sugerido · límite ${fmtDate(p.due, false)}`, trail: `<b class="amt">${money(p.amount)}</b>`,
   })).join('')}</div>`, '<a class="link" href="#/tarjetas">Ver todo</a>') : ''}
 
+  ${installNotice(state, d)}
   ${staleBackup ? `<div class="notice">${icon('shield')}<p><b>Haz un respaldo.</b> Tus datos solo viven en este celular.</p><div class="notice-actions"><button class="btn sm ghost" data-action="backup">Respaldar</button></div></div>` : ''}
   `;
+}
+
+// En iPhone, Safari borra los datos de un sitio que no se usa en 7 días; instalada en la pantalla de inicio no.
+function installNotice(state, d) {
+  const env = d.env || {};
+  if (env.standalone || env.os === 'other' || state.dismissed['install']) return '';
+  const how = env.os === 'ios'
+    ? 'En Safari toca <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. Así tus datos no se borran y se abre como app.'
+    : 'En Chrome toca <b>⋮</b> y luego <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>).';
+  return `<div class="notice">${icon('phone')}<p><b>Instálala en tu celular.</b> ${how}</p><div class="notice-actions">${env.canInstall ? '<button class="btn sm" data-action="install">Instalar</button>' : ''}<button class="btn sm ghost" data-action="dismiss" data-key="install">Ya entendí</button></div></div>`;
 }
 
 function yesterdayStat(d) {
@@ -256,11 +268,51 @@ export function planView(state, d) {
   </div>`)}`;
 }
 
-export function masView(state, d) {
+// Captura automática: Android (MacroDroid con Google Wallet o el banco) y iPhone (atajo de Wallet + Pegar).
+function captureGroup(state, d) {
   const st = state.settings;
+  const os = st.capture?.os || (d.env?.os === 'ios' ? 'ios' : 'android');
   const base = location.href.split(/[?#]/)[0];
   const tok = st.quickAdd?.token || '';
-  const macro = `${base}?raw={notification}&src=nu&id={system_time}&k=${tok}`;
+  const url = (via) => `${base}?raw={notification}&t={not_title}&via=${via}&id={system_time}&k=${tok}`;
+  const copyBox = (text, rows = 3) => `<textarea readonly class="mono" rows="${rows}">${esc(text)}</textarea>
+    <button class="btn sm" data-action="copy-macro" data-text="${esc(text)}">${icon('copy', 16)}Copiar</button>`;
+  const missing4 = state.accounts.filter((a) => !a.archived && (a.type === 'card' || a.type === 'bank') && !a.last4);
+  const tabs = `<div class="seg full">${[['android', 'Android'], ['ios', 'iPhone']].map(([k, l]) => `<button type="button" class="${os === k ? 'on' : ''}" data-action="cap-os" data-os="${k}">${l}</button>`).join('')}</div>`;
+  const android = `
+    <p class="foot top0"><b>Lo más rápido: la notificación de Google Wallet.</b> Sale en cuanto acercas el celular a la terminal, antes que la del banco.</p>
+    <ol class="steps">
+      <li>Instala <b>MacroDroid</b> desde Play Store (la versión gratis alcanza) y dale acceso a notificaciones.</li>
+      <li><b>Agregar macro → Disparador → Notificación → Notificación recibida</b> → elige la app <b>Google Wallet</b>.</li>
+      <li><b>Acción → Aplicaciones → Abrir sitio web/URL</b> y pega esta dirección:</li>
+    </ol>
+    ${copyBox(url('wallet'))}
+    <p class="foot"><b>Compras en línea o con la tarjeta física:</b> haz otra macro igual, pero con la app de tu banco como disparador y esta dirección. Si llegan las dos notificaciones de la misma compra, solo se registra una.</p>
+    ${copyBox(url('bank'))}`;
+  const ios = `
+    <p class="foot top0"><b>Con Apple Pay, al instante:</b> el iPhone avisa a la app Atajos en cuanto se confirma el pago en Wallet. iPhone no deja que una app web se abra sola, así que el atajo copia la compra y tú la pegas con un toque.</p>
+    <ol class="steps">
+      ${d.env?.standalone ? '' : '<li>Primero agrégala a tu pantalla de inicio: en Safari, <b>Compartir → Agregar a pantalla de inicio</b>.</li>'}
+      <li>Abre <b>Atajos → Automatización → Nueva automatización → Transacción</b>. Elige tus tarjetas y marca <b>Ejecutar inmediatamente</b>.</li>
+      <li>Agrega la acción <b>Texto</b> y escribe esto, cambiando cada [ ] por la variable del mismo nombre (tócala en la barra de variables):</li>
+    </ol>
+    ${copyBox('FB|[Monto]|[Comerciante]|[Tarjeta]|[Fecha actual]', 2)}
+    <ol class="steps" start="${d.env?.standalone ? 3 : 4}">
+      <li>Agrega la acción <b>Copiar al portapapeles</b>.</li>
+      <li>Opcional: <b>Mostrar notificación</b> con el texto “Abre FinanciaBass y toca Pegar”.</li>
+      <li>Cuando pagues, abre la app y toca <b>Pegar compra</b> en Hoy. iPhone te pedirá permiso para pegar.</li>
+    </ol>
+    <p class="foot">¿Pagas varias veces antes de abrir la app? Al inicio del texto pon la variable <b>Portapapeles</b> y un salto de línea: se van juntando y la app no repite las que ya registró. Con la tarjeta física, usa el + o pega la notificación del banco.</p>`;
+  return group('Captura automática', `<div class="panel pad">
+    ${tabs}
+    <div class="cap-body">${os === 'ios' ? ios : android}</div>
+    ${missing4.length ? `<p class="foot">${icon('info', 14, 'inline')} Para saber con qué tarjeta pagaste, pon los <b>últimos 4 dígitos</b> de ${missing4.map((a) => esc(a.name)).join(', ')} en <button class="link" data-action="acc-list">Cuentas y tarjetas</button>.</p>` : ''}
+    <p class="foot">Lo que parece transporte va a tu apartado de transporte. Lo demás queda en “Por revisar” para que le pongas categoría. Las compras rechazadas y los pagos que recibes se ignoran.</p>
+  </div>`);
+}
+
+export function masView(state, d) {
+  const st = state.settings;
   const util = d.cards.filter((c) => c.util != null);
   const totalLimit = util.reduce((s, c) => s + c.limit, 0);
   const totalUsed = util.reduce((s, c) => s + c.owed + c.msi, 0);
@@ -268,7 +320,7 @@ export function masView(state, d) {
     ['check', 'Paga siempre el <b>pago para no generar intereses</b>. Nunca solo el mínimo.'],
     ['clock', 'Paga desde el mismo banco o 2 días hábiles antes. Si la fecha cae en día inhábil se recorre, pero no lo dejes al final.'],
     ['card', 'Deja 1 o 2 cargos chicos fijos en cada tarjeta y domicilia el pago: así todas se mantienen activas.'],
-    ['calendar', 'Compras grandes justo después del corte: hasta ~50 días para pagar en Santander y Banamex, ~40 en Nu.'],
+    ['calendar', 'Compras grandes justo después del corte: así tienes el máximo de días para pagar (la app te dice cuál tarjeta conviene hoy).'],
     ['msi', 'Meses sin intereses solo si ya tienes el dinero. La app cuenta cada mensualidad en su mes.'],
     ['shield', 'No saques efectivo con tarjeta de crédito, no abras más tarjetas y no canceles la más antigua.'],
     ['trend', 'Pide gratis tu Reporte de Crédito Especial una vez al año en Buró y en Círculo de Crédito.'],
@@ -287,30 +339,20 @@ export function masView(state, d) {
     trail: `<b class="amt">${money(d.balances[a.id] || 0)}</b>${icon('adjust', 16, 'mute')}`,
   })).join('')}</div><p class="foot">Toca una cuenta para poner su saldo real si no cuadra.</p>`)}
 
-  ${group('Captura automática', `<div class="panel pad">
-    <ol class="steps">
-      <li>Instala <b>MacroDroid</b> desde Play Store. La versión gratis alcanza.</li>
-      <li>Toca <b>Agregar macro</b>. En <i>Disparadores</i> elige <b>Notificación → Notificación recibida</b> y selecciona la app <b>Nu</b>.</li>
-      <li>En <i>Acciones</i> elige <b>Aplicaciones → Abrir sitio web/URL</b> y pega la dirección de abajo.</li>
-      <li>Guarda la macro y haz una compra de prueba (el metro sirve).</li>
-    </ol>
-    <textarea readonly class="mono" rows="3">${esc(macro)}</textarea>
-    <button class="btn sm" data-action="copy-macro" data-text="${esc(macro)}">${icon('copy', 16)}Copiar dirección</button>
-    <p class="foot">Para otro banco copia la macro y cambia <code>src=nu</code> por ${Object.keys(st.quickAdd?.sources || {}).filter((k) => k !== 'nu').map((k) => `<code>${esc(k)}</code>`).join(', ') || 'su nombre'}. El metro va solo a Transporte; lo demás queda en “Por revisar”.</p>
-  </div>`)}
+  ${captureGroup(state, d)}
 
   ${group('Editar', `<div class="panel">
     ${[
     ['acc-list', 'card', 'Cuentas y tarjetas', 'Nombres, límites, días de corte y de pago'],
-    ['sched-list', 'calendar', 'Ingresos y gastos fijos', 'Sueldo, beca, TotalPass, Claude, MSI, ahorro'],
+    ['sched-list', 'calendar', 'Ingresos y gastos fijos', 'Sueldo, renta, suscripciones, MSI, ahorro'],
     ['stmt-list', 'pay', 'Estados de cuenta', 'Lo que debes pagar de cada tarjeta'],
-    ['fares', 'metro', 'Botones rápidos', 'Metro, Metrobús y los que quieras'],
-    ['period', 'more', 'Periodo, transporte y colchón', 'Fechas, apartado diario, mínimo en cuenta'],
+    ['fares', 'metro', 'Botones rápidos', 'Pasajes que pagas seguido (metro, camión…)'],
+    ['period', 'more', 'Periodo, transporte y colchón', 'Cada cuándo te pagan, apartado diario, mínimo en cuenta'],
   ].map(([a, ic, t, m]) => item({ action: `data-action="${a}"`, lead: `<span class="ic hue-gray">${icon(ic, 18)}</span>`, title: t, meta: m, trail: icon('chevron', 16, 'mute') })).join('')}
   </div>`)}
 
   ${group('Respaldo', `<div class="panel pad">
-    <p class="foot top0">Tus datos viven solo en este celular. Si borras los datos de Chrome sin respaldo, se pierden. Último respaldo: <b>${st.lastBackupAt ? fmtDate(st.lastBackupAt) : 'nunca'}</b>.</p>
+    <p class="foot top0">Tus datos viven solo en este celular. Si borras los datos del navegador o desinstalas la app sin respaldo, se pierden. Último respaldo: <b>${st.lastBackupAt ? fmtDate(st.lastBackupAt) : 'nunca'}</b>.</p>
     <div class="pair wrap">
       <button class="btn sm" data-action="backup">${icon('download', 16)}Respaldar</button>
       <button class="btn sm ghost" data-action="import">${icon('upload', 16)}Restaurar</button>
@@ -320,27 +362,6 @@ export function masView(state, d) {
   </div>`)}
   <button class="btn ghost danger wide" data-action="reset">${icon('trash', 18)}Borrar todo</button>
   <p class="colophon">FinanciaBass · tus números nunca salen de tu celular</p>`;
-}
-
-export function onboardingView() {
-  return `<section class="onboard">
-    <div class="brand-mark">${icon('savings', 30)}</div>
-    <h1>FinanciaBass</h1>
-    <p class="lead">Cada día sabes cuánto puedes gastar. Pagas tus tarjetas a tiempo y lo que no uses se ahorra.</p>
-    <div class="panel pad">
-      <h2>¿Tienes un código?</h2>
-      <p class="foot top0">Empieza con <code>FB1.</code> y trae tus cuentas, tarjetas, ingresos y pagos.</p>
-      <textarea id="config-code" rows="4" placeholder="FB1…"></textarea>
-      <button class="btn wide" data-action="config-apply">Cargar mis datos</button>
-    </div>
-    <div class="panel pad">
-      <h2>Empezar desde cero</h2>
-      <label class="item"><span class="item-body"><span class="item-title">¿Cuánto tienes en el banco?</span></span><input id="ob-bank" type="number" inputmode="decimal"></label>
-      <label class="item"><span class="item-body"><span class="item-title">¿Y en efectivo?</span></span><input id="ob-cash" type="number" inputmode="decimal"></label>
-      <button class="btn ghost wide" data-action="blank-start">Empezar</button>
-    </div>
-    <p class="colophon">${icon('shield', 16)} Tus datos se guardan solo en este celular.</p>
-  </section>`;
 }
 
 // Hoja para registrar un movimiento.

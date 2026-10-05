@@ -1,11 +1,13 @@
 import {
-  computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday, dateOf, year, month,
-  parseAmount, money, parseIntent, matchInstance, decodeConfig, emptyState, balancesAt,
+  computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday,
+  parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
+  parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate,
 } from './engine/index.js';
 import * as store from './store.js';
-import { $, esc, toast, openSheet, closeSheet, uid } from './ui/dom.js';
-import { hoyView, movsView, tarjetasView, planView, masView, onboardingView, entrySheet } from './ui/views.js';
+import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone } from './ui/dom.js';
+import { hoyView, movsView, tarjetasView, planView, masView, entrySheet } from './ui/views.js';
+import { renderWizard, clearWizard } from './ui/wizard.js';
 import { icon } from './ui/icons.js';
 import {
   initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
@@ -54,12 +56,24 @@ function runAutoPost() {
 
 const firstOf = (type) => state.accounts.find((a) => a.type === type && !a.archived)?.id;
 
+// Android/Chrome: guardar el aviso de instalación para mostrar nuestro propio botón.
+let installEvent = null;
+window.addEventListener('beforeinstallprompt', (e) => { e.preventDefault(); installEvent = e; if (state) render(); });
+window.addEventListener('appinstalled', () => { installEvent = null; if (state) render(); });
+
 // ---------- render ----------
 const ROUTES = { hoy: hoyView, movs: movsView, tarjetas: tarjetasView, plan: planView, mas: masView };
 
 function render() {
   document.body.classList.toggle('no-state', !state);
-  if (!state) { main.innerHTML = onboardingView(); return; }
+  if (!state) {
+    renderWizard(main, {
+      today, token: uid, toast, applyCode: applyConfigCode,
+      finish: (s) => replaceState(s, '¡Listo! Este es tu número de hoy'),
+    });
+    return;
+  }
+  main.oninput = main.onchange = main.onclick = null;
   runAutoPost();
   const t = today();
   // El plan empieza hoy (no mañana): si la fecha de inicio quedó en el futuro, se mueve a hoy.
@@ -72,6 +86,7 @@ function render() {
   dash.outlook = monthOutlook(state, t);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt(t);
+  dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent };
   const route = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';
   main.innerHTML = (ROUTES[route] || hoyView)(state, dash);
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === `#/${route}`));
@@ -254,6 +269,15 @@ const actions = {
       `${f.name} ${money(f.amount)} · sale de tu apartado de transporte`, true);
   },
   new: (el) => openEntry({ cat: el.dataset.cat }),
+  paste: () => pasteCapture(),
+  'cap-os': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), os: el.dataset.os }; }),
+  dismiss: (el) => commit((s) => { s.dismissed[el.dataset.key] = true; }),
+  async install() {
+    if (!installEvent) return;
+    installEvent.prompt();
+    try { await installEvent.userChoice; } catch { /* nada */ }
+    installEvent = null; render();
+  },
   'new-income': () => openEntry({ type: 'income', account: firstOf('cash'), planRef: 'none' }),
   pay: (el) => openEntry({ type: 'pay', to: el.dataset.card, amountText: el.dataset.amount ? String(Number(el.dataset.amount) / 100) : '' }),
   adjust: (el) => openEntry({ type: 'adjust', account: el.dataset.acc }),
@@ -308,28 +332,13 @@ const actions = {
     });
   },
   'config-apply': () => applyConfigCode($('#config-code').value),
-  'blank-start'() {
-    const t = today();
-    const s = emptyState(t);
-    const last = dateOf(year(t), month(t), 'last');
-    s.settings.firstStart = t;
-    s.settings.firstEnd = addDays(t >= last ? dateOf(year(t), month(t) + 1, 'last') : last, -1);
-    s.settings.quickAdd.token = uid();
-    s.accounts = [
-      { id: 'banco', name: 'Banco', type: 'bank', opening: parseAmount($('#ob-bank').value) || 0 },
-      { id: 'efectivo', name: 'Efectivo', type: 'cash', opening: parseAmount($('#ob-cash').value) || 0 },
-      { id: 'alcancia', name: 'Alcancía', type: 'savings', opening: 0 },
-    ];
-    s.settings.transport.account = 'efectivo';
-    replaceState(s, 'Listo. Agrega tus ingresos y gastos fijos en Plan');
-  },
   async 'copy-macro'(el) {
     try { await navigator.clipboard.writeText(el.dataset.text); toast('Copiado'); } catch { toast('Mantén presionado el texto para copiarlo'); }
   },
   reset() {
     if (!confirm('¿Borrar TODOS tus datos de este celular?')) return;
     if (!confirm('De verdad: no se puede deshacer. ¿Hiciste respaldo?')) return;
-    store.reset(); state = null; render();
+    store.reset(); clearWizard(); state = null; location.hash = ''; render();
   },
 };
 
@@ -377,22 +386,66 @@ function handleIntents() {
   if (params.get('view') && ROUTES[params.get('view')]) { location.hash = `#/${params.get('view')}`; }
   const intent = parseIntent(params, state.settings);
   if (!intent) {
-    if (params.get('new') !== null) openEntry({ cat: params.get('cat') || undefined });
+    if (params.get('new') === 'income') openEntry({ type: 'income', account: firstOf('cash'), planRef: 'none' });
+    else if (params.get('new') !== null) openEntry({ cat: params.get('cat') || undefined });
+    else if (params.get('paste') !== null) pasteSheet();
     return;
   }
   if (intent.ignore) return toast(`No registré la notificación: ${intent.ignore}`);
-  if (intent.extId && state.processedExtIds.includes(intent.extId)) return toast('Eso ya estaba registrado');
   const tx = intent.tx;
   tx.date ||= today();
-  if (!state.accounts.some((a) => a.id === tx.account)) tx.account = tx.cat === 'transporte' ? state.settings.transport?.account : defaultAccount('expense');
-  if (intent.trusted) {
-    commit((s) => {
-      addTx(s, tx);
-      if (intent.extId) s.processedExtIds = [...s.processedExtIds, intent.extId].slice(-500);
-    }, `Registrado: ${money(tx.amount)} ${tx.desc || ''}`, true);
-  } else {
-    openEntry({ type: 'expense', account: tx.account, cat: tx.cat, desc: tx.desc, date: tx.date, amountText: String(tx.amount / 100) });
+  if (!state.accounts.some((a) => a.id === tx.account && !a.archived)) {
+    tx.account = resolveAccount(state.accounts, { src: tx.account, last4: intent.last4, text: intent.text, sources: state.settings.quickAdd?.sources })
+      || (tx.cat === 'transporte' ? state.settings.transport?.account : null) || defaultAccount('expense');
   }
+  if (intent.trusted) captureTx(tx, intent.via, intent.extId);
+  else openEntry({ type: 'expense', account: tx.account, cat: tx.cat, desc: tx.desc, date: tx.date, amountText: String(tx.amount / 100) });
+}
+
+// Guarda una compra capturada (notificación, Wallet, atajo de iPhone). Evita duplicados entre fuentes:
+// la misma compra puede llegar de Google Wallet y luego del banco, o ya la habías registrado a mano.
+function captureTx(tx, via, extId, quiet = false) {
+  if (extId && state.processedExtIds.includes(extId)) { if (!quiet) toast('Eso ya estaba registrado'); return 'seen'; }
+  const dup = findCaptureDuplicate(state.tx, tx, via);
+  commit((s) => {
+    if (dup) {
+      const x = s.tx.find((t) => t.id === dup.id);
+      x.seenBy = [...(x.seenBy || []), via];
+      if (!x.account && tx.account) x.account = tx.account;
+    } else addTx(s, { ...tx, via, seenBy: [via] });
+    if (extId) s.processedExtIds = [...s.processedExtIds, extId].slice(-500);
+  }, quiet ? null : dup ? `Ya lo tenía: ${money(tx.amount)} ${dup.desc || ''}` : `Registrado: ${money(tx.amount)} ${tx.desc || ''}`, !dup);
+  return dup ? 'dup' : 'new';
+}
+
+// iPhone: el atajo de Wallet copia "FB|monto|comercio|tarjeta|fecha" al portapapeles. Aquí se pega.
+async function pasteCapture(text) {
+  if (text == null) {
+    try { text = await navigator.clipboard.readText(); } catch { text = null; }
+    if (text == null) return pasteSheet();
+  }
+  const lines = parseCaptureLines(text);
+  if (!lines.length) {
+    const n = parseNotification(text);
+    if (n.ignore) { toast(text.trim() ? 'No encontré una compra en lo que copiaste' : 'No hay nada copiado'); return pasteSheet(); }
+    const account = resolveAccount(state.accounts, { last4: n.last4, text }) || defaultAccount('expense');
+    return openEntry({ type: 'expense', account, cat: n.cat || undefined, desc: n.merchant, amountText: String(n.amount / 100) });
+  }
+  let added = 0, dups = 0, seen = 0;
+  for (const l of lines) {
+    const account = resolveAccount(state.accounts, { last4: l.last4, text: l.card, sources: state.settings.quickAdd?.sources })
+      || (l.cat === 'transporte' ? state.settings.transport?.account : null) || defaultAccount('expense');
+    const r = captureTx({ type: 'expense', amount: l.amount, desc: l.merchant, cat: l.cat || 'otros', account, date: today(), src: 'auto', review: !l.cat }, 'wallet', l.extId, true);
+    if (r === 'new') added++; else if (r === 'dup') dups++; else seen++;
+  }
+  toast(added ? `${added} compra${added > 1 ? 's' : ''} registrada${added > 1 ? 's' : ''}${dups ? ` (${dups} ya estaba)` : ''}. Revísalas en Hoy.` : 'Esas compras ya estaban registradas');
+}
+
+function pasteSheet() {
+  openSheet(`<h2>Pegar compra</h2><p class="foot top0">Mantén presionado el cuadro y elige <b>Pegar</b>. Sirve con lo que copia el atajo de Wallet o con el texto de una notificación de tu banco.</p>
+    <textarea id="paste-box" rows="4" placeholder="FB|$45.00|OXXO|Nu|…"></textarea><button type="button" class="btn wide lg" data-sheet-action="go">Registrar</button>`, (body) => {
+    body.onclick = (e) => { if (e.target.closest('[data-sheet-action]')) { const v = $('#paste-box', body).value; closeSheet(); if (v.trim()) pasteCapture(v); } };
+  });
 }
 
 // ---------- arranque ----------
@@ -417,4 +470,4 @@ if ('serviceWorker' in navigator) {
 }
 
 // Para depurar desde la consola
-window.fb = { get state() { return state; }, get dash() { return dash; }, describeRule };
+window.fb = { get state() { return state; }, get dash() { return dash; }, describeRule, paste: (t) => pasteCapture(t) };

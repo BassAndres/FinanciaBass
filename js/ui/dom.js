@@ -28,3 +28,12 @@ export function closeSheet() {
 }
 
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+// iPhone/iPad (incluye iPad que se presenta como Mac), Android u otro.
+export function platform() {
+  const ua = navigator.userAgent || '';
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) return 'ios';
+  return /Android/.test(ua) ? 'android' : 'other';
+}
+// ¿Abierta como app instalada (pantalla de inicio) y no en el navegador?
+export const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;

@@ -296,3 +296,36 @@ textarea.mono { font-size: .76rem; word-break: break-all; }
 .ol-big { margin: 0 0 8px; font-size: 1.15rem; font-weight: 800; letter-spacing: -.02em; }
 .chips.mt { margin-top: 8px; }
 .adj-now { margin-top: 10px; }
+
+/* Asistente de bienvenida */
+.i.flip { transform: rotate(180deg); }
+.wizard { padding-bottom: 32px; }
+.wizard .hero { margin-top: 12px; }
+.wbar { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.wsteps { flex: 1; display: flex; gap: 4px; }
+.wsteps i { flex: 1; height: 4px; border-radius: 4px; background: var(--line); }
+.wsteps i.on { background: var(--btn); }
+.wcount { color: var(--muted); font-size: .78rem; font-weight: 700; white-space: nowrap; }
+.wtitle { font-size: 1.5rem; font-weight: 800; letter-spacing: -.03em; margin: 0 0 6px; }
+.wcard { position: relative; display: grid; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; margin-top: 12px; }
+.wcard > .seg { margin-right: 36px; }
+.wremove { position: absolute; top: 12px; right: 10px; width: 32px; height: 32px; border-radius: 10px; border: 0; background: var(--surface-2); color: var(--muted); display: grid; place-items: center; }
+.wfield { display: grid; gap: 6px; font-weight: 700; font-size: .88rem; }
+.wfield small { display: block; color: var(--muted); font-weight: 500; font-size: .76rem; margin-top: 2px; }
+.wfield select, .winput input { width: 100%; padding: 12px 14px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); font: inherit; font-weight: 600; min-height: 46px; }
+.winput { position: relative; display: block; }
+.winput.money i { position: absolute; left: 14px; top: 50%; transform: translateY(-50%); font-style: normal; color: var(--muted); font-weight: 700; }
+.winput.money input { padding-left: 28px; }
+.wpair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wcheck { display: flex; gap: 10px; align-items: flex-start; font-weight: 700; font-size: .88rem; }
+.wcheck input { width: 22px; height: 22px; accent-color: var(--btn); flex: none; margin-top: 1px; }
+.wcheck small { display: block; color: var(--muted); font-weight: 500; font-size: .76rem; }
+.wcode summary { cursor: pointer; color: var(--muted); font-weight: 700; font-size: .88rem; margin-top: 14px; }
+.wcode textarea { margin-top: 10px; }
+
+/* iPhone: sin zoom al escribir (Safari agranda los campos de menos de 16px) y altura real de pantalla. */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea { font-size: 16px !important; }
+}
+.sheet-panel { max-height: 92dvh; overscroll-behavior: contain; }
+html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }

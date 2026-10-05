@@ -1,6 +1,6 @@
 // Hojas para editar todo: cuentas y tarjetas, fijos e ingresos, cada cobro del mes, estados de cuenta,
 // accesos rápidos, periodo y la explicación de "¿por qué este número?".
-import { money, fmtDate, parseAmount, describeRule, instanceToTx, dateOf, year, month, addDays } from '../engine/index.js';
+import { money, fmtDate, parseAmount, describeRule, instanceToTx, dateOf, year, month, addDays, weekday } from '../engine/index.js';
 import { esc, openSheet, closeSheet, toast, uid } from './dom.js';
 import { icon } from './icons.js';
 
@@ -9,7 +9,7 @@ export const initEditors = (c) => { ctx = c; };
 
 const ACC_TYPES = [['bank', 'Banco / débito'], ['cash', 'Efectivo'], ['card', 'Tarjeta de crédito'], ['savings', 'Alcancía / ahorro']];
 const KINDS = [['fixed', 'Gasto fijo'], ['income', 'Ingreso'], ['msi', 'Meses sin intereses'], ['savings', 'Ahorro']];
-const FREQS = [['monthly', 'Cada mes'], ['bimonthly', 'Cada 2 meses'], ['weekly', 'Cada semana'], ['once', 'Una vez']];
+const FREQS = [['monthly', 'Cada mes'], ['semimonthly', 'Quincenal'], ['bimonthly', 'Cada 2 meses'], ['weekly', 'Cada semana'], ['biweekly', 'Cada 2 semanas'], ['once', 'Una vez']];
 const WEEKDAYS = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'].map((d, i) => [String(i), d]);
 const MONTHDAYS = [...Array.from({ length: 31 }, (_, i) => [String(i + 1), `Día ${i + 1}`]), ['last', 'Último día del mes']];
 const accOptions = (filter = () => true) => ctx.state.accounts.filter((a) => !a.archived && filter(a)).map((a) => [a.id, a.name]);
@@ -98,12 +98,13 @@ export function accountSheet(a) {
   formSheet({
     title: isNew ? 'Nueva cuenta o tarjeta' : a.name,
     fields: [
-      { name: 'name', label: 'Nombre', value: a.name, placeholder: 'Ej. Nu, BBVA débito' },
+      { name: 'name', label: 'Nombre', value: a.name, placeholder: 'Ej. BBVA débito, Nu' },
       ...(isNew ? [{ name: 'type', label: 'Tipo', type: 'seg', value: a.type, options: ACC_TYPES.map(([v, l]) => [v, l.split(' /')[0]]) },
         { name: 'opening', label: 'Saldo de hoy', hint: 'En tarjeta: lo que debes', type: 'money', value: '' }] : []),
       { name: 'limit', label: 'Límite de crédito', type: 'money', value: pesos(a.limit), when: { type: ['card'] } },
       { name: 'cutDay', label: 'Día de corte', options: MONTHDAYS.slice(0, 31), value: String(a.cutDay || 1), when: { type: ['card'] } },
       { name: 'dueDay', label: 'Día límite de pago', hint: 'El que viene en tu estado de cuenta', options: MONTHDAYS.slice(0, 31), value: String(a.dueDay || ((a.cutDay || 1) + 19) % 31 + 1), when: { type: ['card'] } },
+      { name: 'last4', label: 'Últimos 4 dígitos', hint: 'Para reconocer tus compras automáticas', type: 'int', value: a.last4 || '', placeholder: 'Opcional', when: { type: ['card', 'bank'] } },
       { name: 'blocked', label: 'Bloqueada (no recomendarla)', type: 'checkbox', value: a.blocked, when: { type: ['card'] } },
       ...(isNew ? [] : [{ name: 'type', type: 'hidden', value: a.type }]),
     ],
@@ -118,6 +119,8 @@ export function accountSheet(a) {
       const type = isNew ? v.type : a.type;
       const next = { ...a, name: v.name.trim(), type };
       if (isNew) next.opening = parseAmount(v.opening) || 0;
+      const l4 = String(v.last4 || '').replace(/\D/g, '').slice(-4);
+      if (l4.length === 4 && (type === 'card' || type === 'bank')) next.last4 = l4; else delete next.last4;
       if (type === 'card') {
         Object.assign(next, { limit: parseAmount(v.limit) || 0, cutDay: Number(v.cutDay), dueDay: Number(v.dueDay), blocked: !!v.blocked });
         delete next.dueDays;
@@ -140,18 +143,19 @@ export function scheduleSheet(s) {
   const isNew = !s;
   const t = ctx.today();
   s = s || { id: uid(), kind: 'fixed', name: '', amount: 0, account: ctx.firstOf('bank'), rule: { type: 'monthly', day: Number(t.slice(8)) } };
-  const freq = s.rule.type === 'weekly' ? 'weekly' : s.rule.type === 'once' ? 'once' : (s.rule.every || 1) === 2 ? 'bimonthly' : 'monthly';
+  const freq = ['weekly', 'once', 'semimonthly', 'biweekly'].includes(s.rule.type) ? s.rule.type : (s.rule.every || 1) === 2 ? 'bimonthly' : 'monthly';
   formSheet({
     title: isNew ? 'Nuevo ingreso o gasto fijo' : s.name,
     subtitle: isNew ? '' : 'Los cambios aplican de hoy en adelante; lo que ya registraste no se mueve.',
     fields: [
       { name: 'kind', label: 'Tipo', type: 'seg', value: s.kind, options: KINDS },
-      { name: 'name', label: 'Nombre', value: s.name, placeholder: 'Ej. TotalPass' },
+      { name: 'name', label: 'Nombre', value: s.name, placeholder: 'Ej. Internet, Netflix' },
       { name: 'amount', label: 'Monto', type: 'money', value: pesos(s.amount) },
       { name: 'account', label: 'Se paga con / entra a', options: accOptions((a) => a.type !== 'savings'), value: s.account },
       { name: 'freq', label: 'Cada cuándo', type: 'seg', value: freq, options: FREQS },
       { name: 'day', label: 'Qué día', options: MONTHDAYS, value: String(s.rule.day ?? 1), when: { freq: ['monthly', 'bimonthly'] } },
-      { name: 'weekday', label: 'Qué día', options: WEEKDAYS, value: String(s.rule.weekday ?? 6), when: { freq: ['weekly'] } },
+      { name: 'weekday', label: 'Qué día', options: WEEKDAYS, value: String(s.rule.weekday ?? (s.rule.anchor ? weekday(s.rule.anchor) : 6)), when: { freq: ['weekly'] } },
+      { name: 'anchor', label: 'Una fecha en que toca', hint: 'Desde ahí, cada 14 días', type: 'date', value: s.rule.anchor && s.rule.type === 'biweekly' ? s.rule.anchor : t, when: { freq: ['biweekly'] } },
       { name: 'date', label: 'Fecha', type: 'date', value: s.rule.date || t, when: { freq: ['once'] } },
       { name: 'autoPost', label: 'Se cobra solo', hint: 'Lo registro automático y no te pregunto', type: 'checkbox', value: s.autoPost, when: { kind: ['fixed', 'msi'] } },
       { name: 'end', label: 'Termina el', hint: 'Opcional', type: 'date', value: s.end || '' },
@@ -168,6 +172,8 @@ export function scheduleSheet(s) {
       const day = v.day === 'last' ? 'last' : Number(v.day);
       const rule = v.freq === 'weekly' ? { type: 'weekly', weekday: Number(v.weekday) }
         : v.freq === 'once' ? { type: 'once', date: v.date }
+          : v.freq === 'semimonthly' ? { type: 'semimonthly' }
+            : v.freq === 'biweekly' ? { type: 'biweekly', anchor: v.anchor || t }
           : { type: 'monthly', day, ...(v.freq === 'bimonthly' ? { every: 2, anchor: s.rule.anchor || dateOf(year(t), month(t), 1) } : {}) };
       const changedRule = !isNew && (JSON.stringify(rule) !== JSON.stringify(s.rule) || amount !== s.amount || v.account !== s.account);
       const autoPost = ['fixed', 'msi'].includes(v.kind) && !!v.autoPost;
@@ -183,7 +189,7 @@ export function scheduleSheet(s) {
           old.end = lastDone;
           // La regla nueva empieza después del último registrado (mes siguiente si es mensual) para no duplicar.
           // Lo pendiente de este mes (si no estaba pagado) se vuelve a crear con los datos nuevos.
-          const after = rule.type === 'monthly' ? dateOf(year(lastDone), month(lastDone) + 1, 1) : addDays(lastDone, 1);
+          const after = rule.type === 'monthly' || rule.type === 'semimonthly' ? dateOf(year(lastDone), month(lastDone) + 1, 1) : addDays(lastDone, 1);
           st.schedules.push({ ...next, id: uid(), start: after });
         } else {
           const i = st.schedules.findIndex((x) => x.id === s.id);
@@ -325,12 +331,17 @@ export function faresSheet() {
 }
 
 // ---------- periodo, transporte y colchón ----------
+const cycleKey = (c) => (!c || (c.type === 'monthly' && c.day === 'last') ? 'last' : c.type === 'monthly' ? 'day' : c.type === 'semimonthly' ? 'semi' : c.type);
 export function periodSheet() {
   const st = ctx.state.settings;
   formSheet({
     title: 'Periodo y transporte',
     fields: [
-      { name: 'firstEnd', label: 'Fin del primer periodo', hint: 'Después, cada periodo va de día de pago a día de pago', type: 'date', value: st.firstEnd },
+      { name: 'cycle', label: '¿Cada cuándo te pagan?', type: 'seg', value: cycleKey(st.payCycle), options: [['last', 'Fin de mes'], ['day', 'Un día del mes'], ['semi', 'Quincenal'], ['weekly', 'Semanal'], ['biweekly', 'Cada 2 semanas']] },
+      { name: 'cday', label: 'Qué día del mes', options: MONTHDAYS.slice(0, 31), value: String(typeof st.payCycle?.day === 'number' ? st.payCycle.day : 1), when: { cycle: ['day'] } },
+      { name: 'cwd', label: 'Qué día de la semana', options: WEEKDAYS, value: String(st.payCycle?.weekday ?? 5), when: { cycle: ['weekly'] } },
+      { name: 'canchor', label: 'Un día en que te pagaron', type: 'date', value: st.payCycle?.anchor || ctx.today(), when: { cycle: ['biweekly'] } },
+      { name: 'firstEnd', label: 'Fin del primer periodo', hint: 'Después, cada periodo va de un pago al siguiente', type: 'date', value: st.firstEnd },
       { name: 'rate', label: 'Transporte diario apartado', type: 'money', value: pesos(st.transport?.rate) },
       { name: 'tacc', label: 'Con qué pago el transporte', options: accOptions((a) => a.type !== 'savings'), value: st.transport?.account },
       { name: 'wk', label: 'Días con transporte', type: 'seg', value: (st.transport?.weekdays || []).length === 5 ? 'lv' : 'all', options: [['all', 'Todos los días'], ['lv', 'Lunes a viernes']] },
@@ -340,7 +351,10 @@ export function periodSheet() {
     ],
     onSave(_, v) {
       if (!v.firstEnd || v.firstEnd < st.firstStart) { toast('Revisa la fecha'); return false; }
+      const payCycle = v.cycle === 'semi' ? { type: 'semimonthly' } : v.cycle === 'weekly' ? { type: 'weekly', weekday: Number(v.cwd) }
+        : v.cycle === 'biweekly' ? { type: 'biweekly', anchor: v.canchor || ctx.today() } : { type: 'monthly', day: v.cycle === 'day' ? Number(v.cday) : 'last' };
       ctx.commit((s) => {
+        s.settings.payCycle = payCycle;
         Object.assign(s.settings, { firstEnd: v.firstEnd, liquidityFloor: parseAmount(v.floor) || 0, overdueGraceDays: Number(v.grace), payStrategy: v.strategy });
         s.settings.transport = { ...s.settings.transport, rate: parseAmount(v.rate) || 0, account: v.tacc, weekdays: v.wk === 'lv' ? [1, 2, 3, 4, 5] : [0, 1, 2, 3, 4, 5, 6] };
       }, 'Ajustes guardados', true);
@@ -361,7 +375,7 @@ export function breakdownSheet(d) {
       <div class="brow total"><span>Disponible</span><b>${money(d.disponible)}</b></div>
       ${d.safeToSpend < Math.max(0, d.disponible) ? row('Te muestro', money(d.safeToSpend), '', `para que el ${fmtDate(d.liquidity.minDate)} alcance a tus pagos`) : ''}
     </div>
-    <p class="foot">El metro y tus fijos (TotalPass, Claude, internet…) ya están apartados: no bajan tu número salvo que cuesten más de lo planeado. Las compras con tarjeta sí cuentan el día que las haces; pagar la tarjeta no.</p>
+    <p class="foot">El transporte diario y tus gastos fijos ya están apartados: no bajan tu número salvo que cuesten más de lo planeado. Las compras con tarjeta sí cuentan el día que las haces; pagar la tarjeta no.</p>
     <div class="panel pad breakdown">
       ${row('Transporte del periodo', `${money(d.transport.spent)} de ${money(d.transport.budget)}`)}
       ${row('Dinero neto hoy', money(d.net), '', 'efectivo + banco − tarjetas')}

@@ -1,5 +1,5 @@
 // Reglas de ingresos y gastos que se repiten. Cada ocurrencia es una "instancia" con id `regla@fecha`.
-import { dateOf, monthIndex, weekday, eachDay } from './dates.js';
+import { dateOf, monthIndex, weekday, eachDay, diffDays } from './dates.js';
 
 // Signo: los ingresos suman, todo lo demás (fijos, MSI, ahorro) resta.
 export const signOf = (kind) => (kind === 'income' ? 1 : -1);
@@ -10,6 +10,17 @@ function datesFor(rule, from, to) {
     if (rule.date >= from && rule.date <= to) out.push(rule.date);
   } else if (rule.type === 'weekly') {
     eachDay(from, to, (d) => { if (weekday(d) === rule.weekday) out.push(d); });
+  } else if (rule.type === 'biweekly') {
+    eachDay(from, to, (d) => { if (((diffDays(d, rule.anchor) % 14) + 14) % 14 === 0) out.push(d); });
+  } else if (rule.type === 'semimonthly') {
+    // Quincenas: el 15 y el último día del mes (o los días que digas).
+    const [a, b] = rule.days || [15, 'last'];
+    for (let mi = monthIndex(from); mi <= monthIndex(to); mi++) {
+      for (const dd of [a, b]) {
+        const d = dateOf(Math.floor(mi / 12), (mi % 12) + 1, dd);
+        if (d >= from && d <= to && !out.includes(d)) out.push(d);
+      }
+    }
   } else if (rule.type === 'monthly') {
     const every = rule.every || 1;
     const anchor = rule.anchor ? monthIndex(rule.anchor) : null;
@@ -50,6 +61,8 @@ export function describeRule(rule) {
   const dias = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
   if (rule.type === 'once') return `una vez (${rule.date})`;
   if (rule.type === 'weekly') return `cada ${dias[rule.weekday]}`;
+  if (rule.type === 'biweekly') return `cada 2 semanas (${dias[weekday(rule.anchor)]})`;
+  if (rule.type === 'semimonthly') return 'cada quincena (15 y fin de mes)';
   const d = rule.day === 'last' ? 'el último día' : `el día ${rule.day}`;
   if ((rule.every || 1) === 2) return `${d}, cada 2 meses`;
   return `${d} de cada mes`;
