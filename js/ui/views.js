@@ -199,7 +199,8 @@ export function tarjetasView(state, d) {
     const sugg = d.payPlan.filter((p) => p.statement === s.id && !p.onDue);
     return `<div class="due" data-action="stmt-edit" data-id="${esc(s.id)}" role="button">${icon('calendar', 18)}<p>
       <b>${money(s.remaining)}</b> a pagar a más tardar el <b>${fmtDate(s.due)}</b> (fecha límite, sin intereses).
-      ${s.payFrom && s.payFrom > d.today ? `<br>${s.cut ? `Es lo que llevas en este ciclo: corta el ${fmtDate(s.cut, false)}. ` : ''}El banco te deja pagarlo desde el ${fmtDate(s.payFrom)}.` : ''}
+      ${s.live === 'bill' ? `<br>Ya cortó el ${fmtDate(s.cut, false)}: es lo que debías a esa fecha menos lo que ya pagaste.` : ''}
+      ${s.payFrom && s.payFrom > d.today ? `<br>${s.cut ? `Es lo que llevas en este ciclo (se actualiza con cada compra): corta el ${fmtDate(s.cut, false)}. ` : ''}El banco te deja pagarlo desde el ${fmtDate(s.payFrom)}.` : ''}
       ${s.paid ? `<br>Ya abonaste ${money(s.paid)}.` : ''}
       ${sugg.length ? `<br><span class="sugg">Sugerido: ${sugg.map((p) => `${money(p.amount)} ${p.date <= d.today ? 'hoy' : `el ${fmtDate(p.date, false)}`}`).join(', ')}</span>` : ''}</p></div>`;
   }).join('')}

@@ -1,6 +1,7 @@
 // Tarjetas de crédito: cortes, fechas límite, utilización, estados de cuenta y "¿con qué tarjeta pago hoy?".
 import { dateOf, year, month, addDays, diffDays } from './dates.js';
 import { nextBusinessDay } from './holidays.js';
+import { balancesAt } from './ledger.js';
 
 // Primer corte en o después de `date`.
 export function nextCut(card, date) {
@@ -45,6 +46,48 @@ export function statementStatus(state, accounts) {
       const cut = s.beforeCut && acc?.cutDay ? nextCut(acc, s.createdAt) : null;
       const payFrom = s.payFrom || (cut ? addDays(cut, 1) : undefined);
       out.push({ ...s, cut, payFrom, paid: applied, remaining: s.amount - applied, cardName: acc?.name || card });
+    }
+  }
+  return out.sort((a, b) => (a.due < b.due ? -1 : 1));
+}
+
+// Lo que hay que pagar de cada tarjeta, a partir de su saldo real:
+//  - "ya cortó": lo que debías al último corte menos lo que has pagado después (o el estado de cuenta capturado);
+//  - "este ciclo": lo que llevas desde ese corte; se paga después del siguiente corte.
+// Las fechas límite capturadas a mano (estados de cuenta) mandan sobre las calculadas.
+export function billsFor(state, accounts, bal, today) {
+  const captured = statementStatus({ ...state, statements: (state.statements || []).filter((x) => !x.beforeCut) }, accounts);
+  const pending = (state.statements || []).filter((x) => x.beforeCut);
+  const opening = state.settings.openingDate || today;
+  const paidAfter = (card, date) => state.tx.reduce((a, t) => a + ((t.date > date && t.date <= today &&
+    ((t.type === 'transfer' && t.to === card) || (t.type === 'income' && t.account === card))) ? t.amount : 0), 0);
+  const out = [];
+  for (const acc of state.accounts) {
+    if (acc.type !== 'card' || acc.archived) continue;
+    const mine = captured.filter((x) => x.card === acc.id);
+    if (!acc.cutDay) { out.push(...mine); continue; }
+    const nc = nextCut(acc, today);
+    const pc = dateOf(year(nc), month(nc) - 1, acc.cutDay); // último corte (siempre antes de hoy)
+    let billRemaining = 0;
+    // Estados de cuenta capturados (con el monto exacto del banco).
+    for (const m of mine) { out.push(m); billRemaining += Math.max(0, m.remaining); }
+    // Último corte (si pasó después de que empezaste a usar la app y no capturaste su estado de cuenta).
+    if (pc && pc >= opening && !mine.some((m) => Math.abs(diffDays(m.due, dueForCut(acc, pc))) <= 10)) {
+      const owedAtCut = balancesAt(state, pc)[acc.id] || 0;
+      const remaining = Math.max(0, owedAtCut - paidAfter(acc.id, pc));
+      const over = pending.find((x) => x.card === acc.id && nextCut(acc, x.createdAt) === pc);
+      if (remaining > 0) {
+        out.push({ id: `bill:${acc.id}:${pc}`, card: acc.id, cardName: acc.name, amount: owedAtCut, paid: owedAtCut - remaining, remaining,
+          cut: pc, due: over?.due || dueForCut(acc, pc), live: 'bill' });
+      }
+      billRemaining += remaining;
+    }
+    // Lo que llevas en el ciclo actual.
+    const open = (bal[acc.id] || 0) - billRemaining;
+    if (open > 0) {
+      const over = pending.find((x) => x.card === acc.id && nextCut(acc, x.createdAt) === nc);
+      out.push({ id: over?.id || `open:${acc.id}:${nc}`, card: acc.id, cardName: acc.name, amount: open, paid: 0, remaining: open,
+        cut: nc, payFrom: addDays(nc, 1), due: over?.due || dueForCut(acc, nc), live: 'open', beforeCut: true });
     }
   }
   return out.sort((a, b) => (a.due < b.due ? -1 : 1));

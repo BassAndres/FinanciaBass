@@ -14,7 +14,7 @@ import { addDays, diffDays, weekday, eachDay, maxDate, dateOf, year, month } fro
 import { expandSchedules, instanceDate } from './schedule.js';
 import { periodFor } from './periods.js';
 import { indexAccounts, balancesAt, netOf, liquidOf, txNetEffect, isLiquid } from './ledger.js';
-import { statementStatus, cardSummaries, recommendCard } from './cards.js';
+import { billsFor, cardSummaries, recommendCard } from './cards.js';
 import { isPooledTransport } from './quickadd.js';
 
 
@@ -123,7 +123,7 @@ export function computeDashboard(state, today) {
   const todayTx = state.tx.filter((x) => x.date === t && (x.type === 'expense' || x.type === 'income'));
   const todayVariable = todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + (x.type === 'expense' ? x.amount : -x.amount), 0);
   const liquid = liquidOf(now.bal, accounts);
-  const statements = statementStatus(state, accounts).filter((s) => s.remaining > 0);
+  const statements = billsFor(state, accounts, now.bal, t).filter((s) => s.remaining > 0);
   const cards = cardSummaries(state, now.bal, accounts, t);
   const base = Math.floor(libre / D);
   const dueNow = now.status.filter((i) => i.status === 'due' && i.kind !== 'income' && i.date <= t && isLiquid(accounts[i.account]))

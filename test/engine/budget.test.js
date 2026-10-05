@@ -36,7 +36,7 @@ test('compra con tarjeta cuenta el día que la haces y pagar la tarjeta no cuent
   assert.equal(disp(s, '2026-10-01'), -17000);
   s.tx.push(tx({ type: 'transfer', account: 'banco', to: 'ta', amount: 220000, date: '2026-10-02' }));
   assert.equal(disp(s, '2026-10-02'), -14000);
-  assert.equal(computeDashboard(s, '2026-10-02').statements.length, 0);
+  assert.equal(computeDashboard(s, '2026-10-02').statements.filter((x) => x.card === 'ta').length, 0);
 });
 
 test('fijo ligado: solo afecta la diferencia contra lo planeado', () => {
@@ -116,8 +116,9 @@ test('conciliar: ajuste de saldo pega hoy', () => {
 
 test('plan de pagos: adelanta el estado de cuenta si alcanza y respeta el piso', () => {
   const d = computeDashboard(demoState(), '2026-10-01');
-  assert.equal(d.payPlan.length, 1);
-  assert.deepEqual([d.payPlan[0].date, d.payPlan[0].amount], ['2026-10-01', 200000]);
+  const ta = d.payPlan.filter((p) => p.card === 'ta');
+  assert.equal(ta.length, 1);
+  assert.deepEqual([ta[0].date, ta[0].amount], ['2026-10-01', 200000]);
   assert.ok(d.liquidity.min >= 30000);
 });
 
@@ -128,17 +129,17 @@ test('plan de pagos: si no alcanza hoy, abona con cada entrada', () => {
   s.statements[0].amount = 700000;
   s.statements[0].due = '2026-10-29';
   const d = computeDashboard(s, '2026-10-01');
-  const total = d.payPlan.reduce((a, p) => a + p.amount, 0);
-  assert.equal(total, 700000);
-  assert.ok(d.payPlan.length > 1);
-  assert.ok(d.payPlan.every((p) => p.date <= '2026-10-29'));
+  const ta = d.payPlan.filter((p) => p.card === 'ta');
+  assert.equal(ta.reduce((a, p) => a + p.amount, 0), 700000);
+  assert.ok(ta.length > 1);
+  assert.ok(ta.every((p) => p.date <= '2026-10-29'));
 });
 
 test('payFrom: no se puede pagar antes del corte', () => {
   const s = demoState();
   s.statements[0].payFrom = '2026-10-05';
   const d = computeDashboard(s, '2026-10-01');
-  assert.ok(d.payPlan.every((p) => p.date >= '2026-10-05'));
+  assert.ok(d.payPlan.filter((p) => p.card === 'ta').every((p) => p.date >= '2026-10-05'));
 });
 
 test('mensualidades MSI se cargan solas', () => {
@@ -232,7 +233,8 @@ test('pagar en la fecha límite: no sugiere adelantos', () => {
   const s = demoState();
   s.settings.payStrategy = 'due';
   const d = computeDashboard(s, '2026-10-01');
-  assert.deepEqual(d.payPlan.map((p) => [p.date, p.onDue, p.due]), [['2026-10-23', true, '2026-10-23']]);
+  assert.deepEqual(d.payPlan.filter((p) => p.card === 'ta').map((p) => [p.date, p.onDue, p.due]), [['2026-10-23', true, '2026-10-23']]);
+  assert.ok(d.payPlan.every((p) => p.onDue));
 });
 
 test('saldo antes del corte: no se sugiere pagar hasta el día siguiente al corte', async () => {
@@ -243,8 +245,11 @@ test('saldo antes del corte: no se sugiere pagar hasta el día siguiente al cort
   const m = migrate(JSON.parse(JSON.stringify(s)));
   assert.equal(m.statements[0].beforeCut, true);
   const d = computeDashboard(m, '2026-10-01');
-  assert.equal(d.statements[0].payFrom, '2026-10-20'); // Tarjeta C corta el 19
-  assert.ok(d.payPlan.every((p) => p.date >= '2026-10-20'), JSON.stringify(d.payPlan));
+  const tc = d.statements.find((x) => x.card === 'tc');
+  assert.equal(tc.payFrom, '2026-10-20'); // Tarjeta C corta el 19
+  assert.equal(tc.due, '2026-11-09');
+  assert.equal(tc.remaining, 650000); // saldo real de la tarjeta, no el capturado
+  assert.ok(d.payPlan.filter((p) => p.card === 'tc').every((p) => p.date >= '2026-10-20'), JSON.stringify(d.payPlan));
 });
 
 test('cómo te fue cada día: empezaste, gastaste, terminaste', async () => {
@@ -296,4 +301,20 @@ test('transporte sin descripción (micro, combi) sale del apartado; Uber/Didi no
   assert.equal(disp(s, '2026-10-01'), 3000);
   s.tx.push(tx({ type: 'expense', account: 'tc', amount: 8000, date: '2026-10-01', cat: 'transporte', desc: 'DiDi a casa' }));
   assert.equal(disp(s, '2026-10-01'), 3000 - 8000);
+});
+
+test('plan de pagos sigue el saldo real: compras con tarjeta se suman al pago del ciclo', () => {
+  const s = demoState();
+  const tb0 = computeDashboard(s, '2026-10-05').statements.find((x) => x.card === 'tb');
+  assert.deepEqual([tb0.remaining, tb0.cut, tb0.due], [20000, '2026-10-27', '2026-11-09']);
+  s.tx.push(tx({ type: 'expense', account: 'tb', amount: 34000, date: '2026-10-05', cat: 'comida' }));
+  assert.equal(computeDashboard(s, '2026-10-05').statements.find((x) => x.card === 'tb').remaining, 54000);
+  // Después del corte, lo cortado es el pago; lo nuevo va al siguiente ciclo.
+  s.tx.push(tx({ type: 'expense', account: 'tb', amount: 10000, date: '2026-10-29', cat: 'comida' }));
+  const d = computeDashboard(s, '2026-10-30');
+  const bills = d.statements.filter((x) => x.card === 'tb');
+  assert.deepEqual(bills.map((x) => [x.cut, x.remaining, x.due]), [['2026-10-27', 54000, '2026-11-09'], ['2026-11-27', 10000, '2026-12-08']]);
+  // Pagar parte del corte lo reduce
+  s.tx.push(tx({ type: 'transfer', account: 'banco', to: 'tb', amount: 4000, date: '2026-10-30' }));
+  assert.equal(computeDashboard(s, '2026-10-30').statements.find((x) => x.card === 'tb').remaining, 50000);
 });

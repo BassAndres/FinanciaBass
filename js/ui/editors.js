@@ -249,14 +249,14 @@ export function instanceSheet(inst) {
 }
 
 // ---------- estados de cuenta ----------
-export function statementSheet(card, stmt) {
+export function statementSheet(card, stmt, pre = {}) {
   const acc = ctx.state.accounts.find((a) => a.id === (stmt?.card || card));
   formSheet({
     title: `Estado de cuenta · ${acc.name}`,
     subtitle: 'Lo que dice tu estado de cuenta o la app del banco.',
     fields: [
-      { name: 'amount', label: 'Pago para no generar intereses', type: 'money', value: pesos(stmt?.amount) },
-      { name: 'due', label: 'Fecha límite de pago', type: 'date', value: stmt?.due || '' },
+      { name: 'amount', label: 'Pago para no generar intereses', type: 'money', value: pesos(stmt?.amount ?? pre.amount) },
+      { name: 'due', label: 'Fecha límite de pago', type: 'date', value: stmt?.due || pre.due || '' },
       { name: 'beforeCut', label: 'Todavía no corta', hint: 'Es lo que llevo gastado; se paga después del corte', type: 'checkbox', value: stmt?.beforeCut },
       { name: 'payFrom', label: 'Se puede pagar desde', hint: 'Opcional', type: 'date', value: stmt?.payFrom || '' },
     ],
@@ -270,6 +270,24 @@ export function statementSheet(card, stmt) {
         if (stmt) Object.assign(s.statements.find((x) => x.id === stmt.id), data);
         else s.statements.push({ id: uid(), card: acc.id, ...data, createdAt: ctx.today() });
       }, 'Estado de cuenta guardado', true);
+    },
+  });
+}
+
+// Ciclo actual (aún no corta): el monto sale solo del saldo de la tarjeta; aquí solo se ajusta la fecha límite.
+export function cycleDueSheet(bill) {
+  formSheet({
+    title: `${bill.cardName} · este ciclo`,
+    subtitle: `Llevas ${money(bill.remaining)} y se actualiza solo con cada compra o pago. Corta el ${fmtDate(bill.cut, false)}.`,
+    fields: [{ name: 'due', label: 'Fecha límite de pago', type: 'date', value: bill.due }],
+    onSave(_, v) {
+      if (!v.due) { toast('Pon la fecha'); return false; }
+      ctx.commit((s) => {
+        const acc = s.accounts.find((a) => a.id === bill.card);
+        const mine = s.statements.find((x) => x.card === bill.card && x.beforeCut && x.id === bill.id);
+        if (mine) mine.due = v.due;
+        else s.statements.push({ id: uid(), card: acc.id, amount: 0, due: v.due, beforeCut: true, createdAt: ctx.today() });
+      }, 'Fecha guardada', true);
     },
   });
 }

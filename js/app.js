@@ -9,7 +9,7 @@ import { hoyView, movsView, tarjetasView, planView, masView, onboardingView, ent
 import { icon } from './ui/icons.js';
 import {
   initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
-  faresSheet, periodSheet, breakdownSheet,
+  faresSheet, periodSheet, breakdownSheet, cycleDueSheet,
 } from './ui/editors.js';
 
 let state = store.load();
@@ -270,7 +270,13 @@ const actions = {
   'acc-edit': (el) => accountSheet(state.accounts.find((a) => a.id === el.dataset.acc)),
   'sched-list': () => schedulesList(),
   'stmt-list': () => statementsList(),
-  'stmt-edit': (el) => { const st = state.statements.find((x) => x.id === el.dataset.id); statementSheet(st.card, st); },
+  'stmt-edit': (el) => {
+    const bill = dash.statements.find((x) => x.id === el.dataset.id);
+    const st = state.statements.find((x) => x.id === el.dataset.id);
+    if (bill?.live === 'open') cycleDueSheet(bill);
+    else if (bill?.live === 'bill') statementSheet(bill.card, null, { amount: bill.remaining, due: bill.due });
+    else if (st) statementSheet(st.card, st);
+  },
   fares: () => faresSheet(),
   period: () => periodSheet(),
   'inst-skip': (el) => commit((s) => { s.overrides[el.dataset.id] = { ...(s.overrides[el.dataset.id] || {}), status: 'skipped' }; }, 'Marcado como saltado', true),
