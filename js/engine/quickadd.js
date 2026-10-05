@@ -60,7 +60,7 @@ export function matchInstance(instances, tx) {
   if (tx.type !== 'income' && tx.type !== 'expense') return null;
   let best = null, bestScore = 0;
   for (const i of instances) {
-    if (i.status === 'skipped') continue;
+    if (i.status === 'skipped' || i.status === 'scheduled') continue;
     // Un cargo ya registrado en automático puede ser reemplazado por el real (p. ej. la notificación del banco).
     if (i.status === 'done' && !(i.autoOnly && !wantIncome)) continue;
     if (wantIncome ? i.kind !== 'income' : i.kind !== 'fixed' && i.kind !== 'msi') continue;

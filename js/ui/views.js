@@ -220,7 +220,7 @@ export function tarjetasView(state, d) {
 
 export function planView(state, d) {
   const P = d.period;
-  const st = { done: ['check', 'green'], skipped: ['skip', 'gray'], overdue: ['alert', 'amber'], due: ['clock', 'amber'], pending: ['clock', 'gray'] };
+  const st = { done: ['check', 'green'], skipped: ['skip', 'gray'], overdue: ['alert', 'amber'], due: ['clock', 'amber'], pending: ['clock', 'gray'], scheduled: ['calendar', 'blue'] };
   return `<header class="top"><p class="eyebrow">${fmtDate(P.s, false)} – ${fmtDate(P.e, false)} · ${P.D} días</p><h1>Plan</h1></header>
   <div class="summary">
     <div><small>Libre en el periodo</small><b>${money(d.libre)}</b></div>
@@ -237,7 +237,7 @@ export function planView(state, d) {
   ${group('Este periodo', `<div class="panel">${d.instances.map((i) => item({
     action: `data-action="inst-open" data-id="${esc(i.id)}"`,
     lead: `<span class="ic hue-${st[i.status][1]}">${icon(st[i.status][0], 18)}</span>`,
-    title: esc(i.name), meta: `${fmtDate(i.date)} · ${esc(accName(state, i.account))} · ${{ done: i.kind === 'income' ? 'llegó' : 'pagado', skipped: 'saltado', overdue: 'no ha llegado', due: 'pendiente', pending: 'próximo' }[i.status]}`,
+    title: esc(i.name), meta: `${fmtDate(i.date)} · ${esc(accName(state, i.account))} · ${(i.status === 'scheduled' ? `programado para el ${fmtDate(i.scheduledFor, false)}` : { done: i.kind === 'income' ? 'llegó' : 'pagado', skipped: 'saltado', overdue: 'no ha llegado', due: 'pendiente', pending: 'próximo' }[i.status])}`,
     trail: `<b class="amt ${i.kind === 'income' ? 'pos' : ''} ${i.status === 'skipped' ? 'strike' : ''}">${money(i.status === 'done' ? i.value : i.signed, { sign: i.kind === 'income' })}</b>${icon('chevron', 16, 'mute')}`,
   })).join('')}</div><p class="foot">Toca cualquiera para marcarlo, cambiar el monto de este mes o saltarlo.</p>`)}
 

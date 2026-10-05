@@ -335,3 +335,17 @@ test('el día del corte: pagar la deuda y comprar ese mismo día; la compra va a
   const d2 = computeDashboard(s2, '2026-10-05');
   assert.deepEqual(d2.statements.filter((x) => x.card === 'ta').map((x) => [x.remaining, x.cut]), [[210000, '2026-10-04'], [34500, '2026-11-04']]);
 });
+
+test('pago de un fijo registrado con fecha futura: queda programado y ya no se pregunta', () => {
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'tb', amount: 100000, date: '2026-10-16', planRef: 'fijo@2026-10-15' }));
+  const d = computeDashboard(s, '2026-10-15');
+  const i = d.instances.find((x) => x.id === 'fijo@2026-10-15');
+  assert.deepEqual([i.status, i.scheduledFor], ['scheduled', '2026-10-16']);
+  assert.ok(!d.prompts.some((p) => p.id === 'fijo@2026-10-15'));
+  assert.equal(matchInstance(d.instances, { type: 'expense', account: 'ta', amount: 100000, date: '2026-10-15', desc: 'Suscripción' }), null);
+  // Al llegar el día ya cuenta como pagado y en la tarjeta elegida
+  const d2 = computeDashboard(s, '2026-10-16');
+  assert.equal(d2.instances.find((x) => x.id === 'fijo@2026-10-15').status, 'done');
+  assert.equal(d2.balances.tb, 20000 + 100000);
+});

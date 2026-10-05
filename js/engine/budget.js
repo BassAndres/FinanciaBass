@@ -69,17 +69,21 @@ function evalAt(state, ctx, P, t) {
       spentT += tx.amount;
     }
   }
+  const scheduled = {};
+  for (const tx of state.tx) if (tx.date > t && tx.planRef) scheduled[tx.planRef] = tx.date;
   const grace = st.overdueGraceDays ?? 2;
   let values = 0;
   const status = [];
   for (const i of instances) {
     let value, s;
     if (linked[i.id]) { value = linked[i.id].eff; s = 'done'; }
+    // Ya tiene un pago registrado con fecha futura: no se vuelve a preguntar; cuenta como planeado hasta ese día.
+    else if (scheduled[i.id]) { value = i.signed; s = 'scheduled'; }
     else if (i.skipped) { value = 0; s = 'skipped'; }
     else if (i.kind === 'income' && diffDays(t, i.date) > grace) { value = 0; s = 'overdue'; }
     else { value = i.signed; s = i.date <= t ? 'due' : 'pending'; }
     values += value;
-    status.push({ ...i, status: s, value, autoOnly: s === 'done' && linked[i.id].auto });
+    status.push({ ...i, status: s, value, autoOnly: s === 'done' && linked[i.id].auto, scheduledFor: scheduled[i.id] });
   }
   const pool = -Math.max(Q, spentT);
   return { A, R: A + values + pool, bal, status, spentT, linked };
