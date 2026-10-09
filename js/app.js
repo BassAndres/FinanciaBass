@@ -2,7 +2,7 @@ import {
   computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
-  parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate,
+  parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone } from './ui/dom.js';
@@ -418,7 +418,11 @@ function handleIntents() {
   }
   const params = new URLSearchParams(location.search);
   if (![...params.keys()].length) return;
-  history.replaceState(null, '', location.pathname + (location.hash || ''));
+  // Texto de notificación al final de la dirección: se recupera completo aunque traiga "&" o "#" sin codificar.
+  const lenient = rawFromUrl(location.search, hash);
+  if (lenient != null) params.set('raw', lenient);
+  const keepHash = hash.startsWith('#/') ? hash : '';
+  history.replaceState(null, '', location.pathname + keepHash);
   if (!state) return;
   if (params.get('view') && ROUTES[params.get('view')]) { location.hash = `#/${params.get('view')}`; }
   const intent = parseIntent(params, state.settings);

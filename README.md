@@ -7,7 +7,7 @@ App web instalable (PWA) para saber **cuánto puedes gastar hoy**, pagar tus tar
 - **Ingresos y fijos que se repiten:** sueldo, beca, suscripciones y MSI. Los cargos automáticos se registran solos.
 - **Para cualquier persona:** un asistente de bienvenida arma tu plan (cuentas, efectivo, tarjetas con su corte y fecha límite, ingresos, gastos fijos y transporte). Te pueden pagar a fin de mes, un día fijo, por quincena, por semana o cada 2 semanas.
 - **Captura automática:**
-  - **Android:** MacroDroid lee la notificación de **Google Wallet**, que llega al instante al pagar, y la del banco, para compras en línea. Si llegan las dos, la compra se registra una sola vez.
+  - **Android:** una app de automatización gratis (Automate) o de código abierto (Automation) lee la notificación de **Google Wallet**, que llega al instante al pagar, y la del banco, para compras en línea. Si llegan las dos, la compra se registra una sola vez.
   - **iPhone:** una automatización de Atajos (*Transacción* de Wallet) copia cada pago con Apple Pay, y en la app tocas **Pegar compra**.
   - Los últimos 4 dígitos de cada tarjeta dicen con cuál pagaste.
 - **Android y iPhone:** se instala desde Chrome o Safari ("Agregar a pantalla de inicio").
@@ -39,7 +39,11 @@ Una compra con tarjeta cuenta como gasto el día que la haces, y pagar la tarjet
 
 Las instrucciones paso a paso, con tu dirección personal (incluye un token), están en *Más → Captura automática*.
 
-- **Android (MacroDroid):** el disparador es *Notificación recibida* de Google Wallet o de tu banco. La acción es *Abrir sitio web* con `?raw={notification}&t={not_title}&via=wallet|bank&id={system_time}&k=<token>`.
+- **Android:**
+  - **[Automate](https://llamalab.com/automate/)** (gratis, recomendada): bloques *Notification posted* (Google Wallet o tu banco), *Expression true* (solo compras), *Variable set* con `urlEncode()` y *App start* (View + Data URI).
+  - Alternativas: **Automation** (código abierto, F-Droid), **MacroDroid Pro** y **Tasker** (de pago).
+  - Todas necesitan "Mostrar sobre otras apps" y batería "Sin restricciones" para abrir la app cuando estás en otra.
+  - Plantilla de la dirección: `?via=wallet|bank&id=<único>&k=<token>&t=<título>&raw=<texto>`. `raw` va al final para que un `&` o `#` sin codificar no corte el texto.
 - **iPhone (Atajos):** el disparador es la automatización *Transacción*. Las acciones son *Texto* `FB|[Monto]|[Comerciante]|[Tarjeta]|[Fecha actual]` y *Copiar al portapapeles*. iOS no deja que un atajo abra una app web instalada, por eso se pega con un toque.
 - Las compras rechazadas y los pagos recibidos se ignoran. Lo que parece transporte va al apartado de transporte; lo demás queda en "Por revisar".
 

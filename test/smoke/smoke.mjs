@@ -84,6 +84,12 @@ const oxxo = await page.evaluate(() => window.fb.state.tx.filter((t) => t.amount
 assert.equal(oxxo.length, 1);
 assert.equal(oxxo[0].account, 'tarjeta-x');
 assert.deepEqual(oxxo[0].seenBy, ['wallet', 'bank']);
+// MacroDroid/Tasker sin codificar: "&" y "#" en el texto, con raw al final de la dirección.
+await page.goto(`${base}?via=bank&id=md1&k=${tok}&t=Nu&raw=Compraste $310.00 en H&M Perisur con tu tarjeta #4321`);
+await page.locator('.hero-amount').waitFor();
+const hm = await page.evaluate(() => window.fb.state.tx.find((t) => t.amount === 31000));
+assert.deepEqual([hm?.desc, hm?.account], ['H&M Perisur', 'tarjeta-x']);
+assert.equal(await page.evaluate(() => location.hash), '');
 // iPhone: pegar lo que copió el atajo de Wallet (dos compras, una repetida al pegar otra vez).
 await page.evaluate(() => { window.__clip = 'FB|$45.00|Starbucks|Tarjeta X|1 oct 2026 10:00\nFB|$5.00|Metro|Tarjeta X|1 oct 2026 10:30'; });
 await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { value: { readText: async () => window.__clip, writeText: async () => {} }, configurable: true }); });

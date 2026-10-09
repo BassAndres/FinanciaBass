@@ -143,3 +143,13 @@ test('URL de Automate (urlEncode estilo Java: espacios como +) se lee bien', () 
   const r = parseIntent(new URLSearchParams(q), demoState().settings);
   assert.deepEqual([r.tx.amount, r.tx.desc, r.last4, r.via, r.extId, r.trusted], [125050, 'Liverpool Perisur', '4321', 'wallet', 'com.google.android.apps.walletnfcrel-12-1791234567', true]);
 });
+
+test('texto al final de la dirección: se recupera con "&", "#" y "%" sin codificar', async () => {
+  const { rawFromUrl } = await import('../../js/engine/quickadd.js');
+  assert.equal(rawFromUrl('?via=wallet&id=1&k=t&t=H&M&raw=$899.00 en H&M Perisur con Visa ', '#1234'), '$899.00 en H&M Perisur con Visa #1234');
+  assert.equal(rawFromUrl('?via=bank&k=t&raw=Compra%20de%20%24120.00%20al%20100%', ''), 'Compra de $120.00 al 100%');
+  assert.equal(rawFromUrl('?raw=%2445.00+con+Nu&t=OXXO&k=t', ''), null); // raw no es el último: se usa el normal
+  assert.equal(rawFromUrl('?add=5&desc=Metro', ''), null);
+  const r = parseIntent(new URLSearchParams({ via: 'bank', k: 'tok123', raw: rawFromUrl('?via=bank&k=tok123&raw=Compraste $250.00 en H&M con tu tarjeta', '') }), demoState().settings);
+  assert.deepEqual([r.tx.amount, r.tx.desc], [25000, 'H&M']);
+});

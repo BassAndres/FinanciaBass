@@ -16,7 +16,7 @@ const INCOMING_RE = /recibiste|recibimos|has recibido|te (enviaron|depositaron|t
 
 // Últimos 4 dígitos de la tarjeta en el texto ("•••• 1234", "*1234", "terminación 1234", "termina en 1234").
 export function findLast4(text) {
-  const m = String(text || '').match(/(?:[•·*xX]{1,}\s?|termina(?:da|ci[oó]n)?(?:\s+en)?\s+|ending(?:\s+in)?\s+)(\d{4})\b/);
+  const m = String(text || '').match(/(?:[•·*xX#]{1,}\s?|termina(?:da|ci[oó]n)?(?:\s+en)?\s+|ending(?:\s+in)?\s+)(\d{4})\b/);
   return m ? m[1] : null;
 }
 
@@ -103,6 +103,17 @@ export function findCaptureDuplicate(txs, tx, via, nowTs = Date.now()) {
     (!x.account || !tx.account || x.account === tx.account) &&
     (x.via || 'manual') !== via && !(x.seenBy || []).includes(via) &&
     (!x.ts || Math.abs(nowTs - x.ts) <= WINDOW)) || null;
+}
+
+// Algunas apps (MacroDroid, Tasker) no codifican bien el texto: un "&" lo corta y un "#" lo manda al fragmento.
+// Si raw es el último parámetro, se toma todo lo que sigue (incluido el fragmento). Si no es el último, null.
+export function rawFromUrl(search, hash = '') {
+  const m = `${search || ''}${hash || ''}`.match(/[?&]raw=([\s\S]*)$/);
+  if (!m || /&(?:k|id|via|t|src|m|d|cat|add|desc)=/.test(m[1])) return null;
+  const plus = m[1].replace(/\+/g, ' ');
+  try { return decodeURIComponent(plus); } catch {
+    return plus.replace(/(?:%[0-9a-f]{2})+/gi, (x) => { try { return decodeURIComponent(x); } catch { return x; } });
+  }
 }
 
 // Convierte los parámetros de la URL en un borrador de movimiento. No toca el estado.
