@@ -279,16 +279,53 @@ function captureGroup(state, d) {
     <button class="btn sm" data-action="copy-macro" data-text="${esc(text)}">${icon('copy', 16)}Copiar</button>`;
   const missing4 = state.accounts.filter((a) => !a.archived && (a.type === 'card' || a.type === 'bank') && !a.last4);
   const tabs = `<div class="seg full">${[['android', 'Android'], ['ios', 'iPhone']].map(([k, l]) => `<button type="button" class="${os === k ? 'on' : ''}" data-action="cap-os" data-os="${k}">${l}</button>`).join('')}</div>`;
-  const android = `
-    <p class="foot top0"><b>Lo más rápido: la notificación de Google Wallet.</b> Sale en cuanto acercas el celular a la terminal, antes que la del banco.</p>
+  const app = st.capture?.app || 'automate';
+  // Automate: fórmula con urlEncode(); el id (app-notificación-hora) no cambia si la notificación se actualiza.
+  const formula = (via) => `"${base}?raw=" ++ urlEncode(coalesce(texto, "")) ++ "&t=" ++ urlEncode(coalesce(titulo, "")) ++ "&via=${via}&id=" ++ urlEncode(pkg ++ "-" ++ nid ++ "-" ++ coalesce(cuando, Now)) ++ "&k=${tok}"`;
+  const apps = `<div class="chips mt">${[['automate', 'Automate · gratis'], ['automation', 'Automation · código abierto'], ['paid', 'MacroDroid o Tasker · de pago']]
+    .map(([k, l]) => `<button type="button" class="chip ${app === k ? 'on' : ''}" data-action="cap-app" data-app="${k}">${l}</button>`).join('')}</div>`;
+  const perms = (name) => `<li>Dale permisos en los Ajustes de Android: <b>Aplicaciones → Acceso especial → Mostrar sobre otras apps → ${name} → Permitir</b> (sin esto no se abre la app cuando estás en otra, y no avisa). En <b>Aplicaciones → ${name} → Batería</b> elige <b>Sin restricciones</b>. En Xiaomi, Redmi o POCO activa también <b>Otros permisos → Mostrar ventanas emergentes en segundo plano</b>.</li>`;
+  const automate = `
     <ol class="steps">
-      <li>Instala <b>MacroDroid</b> desde Play Store (la versión gratis alcanza) y dale acceso a notificaciones.</li>
-      <li><b>Agregar macro → Disparador → Notificación → Notificación recibida</b> → elige la app <b>Google Wallet</b>.</li>
-      <li><b>Acción → Aplicaciones → Abrir sitio web/URL</b> y pega esta dirección:</li>
+      <li>Instala <b>Automate</b> (de LlamaLab) desde Play Store. Es gratis para siempre, sin anuncios; solo limita a 30 bloques y esto usa unos 10.</li>
+      ${perms('Automate')}
+      <li>En Automate toca <b>Flows → +</b>. Con la lupa busca y agrega el bloque <b>Notification posted</b> y configúralo:
+        <i>Proceed</i>: <b>When transition</b> · <i>Package</i>: <code>com.google.android.apps.walletnfcrel</code> (Google Wallet) · <i>Exclude flags</i>: <b>Group summary</b> ·
+        y en las variables de salida escribe: Package → <code>pkg</code>, Title → <code>titulo</code>, Message → <code>texto</code>, Notification id → <code>nid</code>, When timestamp → <code>cuando</code>.</li>
+      <li>Agrega el bloque <b>Variable set</b>. En <i>Variable</i> escribe <code>url</code>; en <i>Value</i> toca <b>fx</b> y pega esto (ya trae tu clave):</li>
     </ol>
+    ${copyBox(formula('wallet'), 5)}
+    <ol class="steps" start="5">
+      <li>Agrega el bloque <b>App start</b>: <i>Action</i> <b>View</b> y en <i>Data URI</i> toca <b>fx</b> y escribe <code>url</code>. Deja lo demás vacío.</li>
+      <li>Conecta los puntos: <b>Flow beginning</b> → Notification posted; su salida <b>YES</b> → Variable set → App start → de regreso a la entrada de Notification posted. Su salida <b>NO</b> también regrésala a su propia entrada, para que siempre siga escuchando.</li>
+      <li>Guarda (✓) y toca <b>Start</b>; acepta el <b>acceso a notificaciones</b>. En <b>☰ → Settings</b> activa <b>Run on system startup</b> para que siga después de reiniciar.</li>
+      <li>Para tu banco (compras en línea o con la tarjeta física): en la lista usa <b>⋮ → Duplicate</b>, en <i>Package</i> elige la app de tu banco y en Variable set pega esta otra fórmula:</li>
+    </ol>
+    ${copyBox(formula('bank'), 5)}
+    <p class="foot">Prueba con una compra chica teniendo otra app abierta: debe abrirse FinanciaBass con “Registrado”. Si no pasa nada, revisa “Mostrar sobre otras apps” y la batería; el registro de lo que pasó está en el flujo, <b>⋮ → Log</b>.</p>`;
+  const automation = `
+    <p class="foot top0">De código abierto (GPL) y gratis. Funciona, pero en algunos celulares lee mal el texto de la notificación; si una compra sale rara, usa Automate.</p>
+    <ol class="steps">
+      <li>Instala <b>F-Droid</b> desde f-droid.org y dentro busca <b>Automation</b> (de Jens Schröder). Si al dar acceso a notificaciones sale “Configuración restringida”: <b>Ajustes → Aplicaciones → Automation → ⋮ → Permitir configuración restringida</b>.</li>
+      ${perms('Automation')}
+      <li>Crea una regla con el disparador <b>Notificaciones de otras apps</b>: app <b>Google Wallet</b>, texto <b>contiene</b> <code>$</code>.</li>
+      <li>Acciones, en este orden: <b>Establecer variable</b> <code>fbtit</code> = <code>[notificationTitle]</code>; <b>Establecer variable</b> <code>fbtxt</code> = <code>[notificationText]</code>; <b>Iniciar otro programa</b> por acción <code>android.intent.action.VIEW</code>, con un parámetro tipo <b>Uri</b> llamado <code>IntentData</code> con este valor:</li>
+    </ol>
+    ${copyBox(`${base}?raw=[variable-fbtxt]&t=[variable-fbtit]&via=wallet&id=[Y][m][d][H][i][s][ms]&k=${tok}`)}
+    <ol class="steps" start="5">
+      <li>Última acción: <b>Cerrar notificaciones</b> de Google Wallet (así no la vuelve a registrar si el celular se reinicia).</li>
+      <li>Para tu banco, repite la regla con su app, otras variables (por ejemplo <code>bntit</code> y <code>bntxt</code>) y <code>via=bank</code>.</li>
+    </ol>`;
+  const paid = `
+    <p class="foot top0"><b>MacroDroid Pro</b> (pago único): disparador <b>Notificación recibida</b> de Google Wallet (y otra macro con tu banco, cambiando <code>via=wallet</code> por <code>via=bank</code>), acción <b>Abrir sitio web/URL</b> con esta dirección. La versión gratis ya solo es una prueba de unos días.</p>
     ${copyBox(url('wallet'))}
-    <p class="foot"><b>Compras en línea o con la tarjeta física:</b> haz otra macro igual, pero con la app de tu banco como disparador y esta dirección. Si llegan las dos notificaciones de la misma compra, solo se registra una.</p>
-    ${copyBox(url('bank'))}`;
+    <p class="foot"><b>Tasker</b> (MX$95, pago único): evento <b>IU → Notificación</b> de Google Wallet; el título está en <code>%evtprm2</code> y el texto en <code>%evtprm3</code>. Codifícalos con <b>Convertir variable → Codificar URL</b> y ábrelos con <b>Navegar a URL</b> usando la misma dirección.</p>
+    <p class="foot">En ambos da “Mostrar sobre otras apps” y batería “Sin restricciones”.</p>`;
+  const android = `
+    <p class="foot top0"><b>Lo más rápido: la notificación de Google Wallet.</b> Sale en cuanto acercas el celular a la terminal. Una app de automatización la lee y abre FinanciaBass con la compra. Si también llega la del banco, solo se registra una vez.</p>
+    ${apps}
+    ${app === 'automation' ? automation : app === 'paid' ? paid : automate}
+    <p class="foot">Si la compra se abre en Chrome en vez de la app: <b>Ajustes → Aplicaciones → FinanciaBass → Abrir de forma predeterminada → Abrir vínculos compatibles</b>. Usa Chrome como navegador; en otros la app no guarda la compra.</p>`;
   const ios = `
     <p class="foot top0"><b>Con Apple Pay, al instante:</b> el iPhone avisa a la app Atajos en cuanto se confirma el pago en Wallet. iPhone no deja que una app web se abra sola, así que el atajo copia la compra y tú la pegas con un toque.</p>
     <ol class="steps">

@@ -136,3 +136,10 @@ test('estado de cuenta capturado días después del corte cuenta el pago hecho e
   const b = bills(s, '2026-10-08');
   assert.equal(b.find((x) => x.id === 's2').remaining, 150000);
 });
+
+test('URL de Automate (urlEncode estilo Java: espacios como +) se lee bien', () => {
+  const javaEnc = (x) => encodeURIComponent(x).replace(/%20/g, '+').replace(/[!'()~]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+  const q = `raw=${javaEnc('$1,250.50 con Nu •••• 4321')}&t=${javaEnc('Liverpool Perisur')}&via=wallet&id=${javaEnc('com.google.android.apps.walletnfcrel-12-1791234567')}&k=tok123`;
+  const r = parseIntent(new URLSearchParams(q), demoState().settings);
+  assert.deepEqual([r.tx.amount, r.tx.desc, r.last4, r.via, r.extId, r.trusted], [125050, 'Liverpool Perisur', '4321', 'wallet', 'com.google.android.apps.walletnfcrel-12-1791234567', true]);
+});

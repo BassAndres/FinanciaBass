@@ -286,6 +286,7 @@ const actions = {
   new: (el) => openEntry({ cat: el.dataset.cat }),
   paste: () => pasteCapture(),
   'cap-os': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), os: el.dataset.os }; }),
+  'cap-app': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), app: el.dataset.app }; }),
   dismiss: (el) => commit((s) => { s.dismissed[el.dataset.key] = true; }),
   async install() {
     if (!installEvent) return;
