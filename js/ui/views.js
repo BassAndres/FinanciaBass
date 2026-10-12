@@ -105,7 +105,7 @@ function installNotice(state, d) {
   if (env.standalone || env.os === 'other' || state.dismissed['install']) return '';
   const how = env.os === 'ios'
     ? 'En Safari toca <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. Así tus datos no se borran y se abre como app.'
-    : 'En Chrome toca <b>⋮</b> y luego <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>).';
+    : `En ${esc(env.browser?.name || 'tu navegador')} toca <b>⋮</b> y luego <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>). Ábrela siempre desde ese mismo navegador: ahí viven tus datos.`;
   return `<div class="notice">${icon('phone')}<p><b>Instálala en tu celular.</b> ${how}</p><div class="notice-actions">${env.canInstall ? '<button class="btn sm" data-action="install">Instalar</button>' : ''}<button class="btn sm ghost" data-action="dismiss" data-key="install">Ya entendí</button></div></div>`;
 }
 
@@ -340,8 +340,8 @@ function captureGroup(state, d) {
   const test = `<div class="cap-test">
     <p class="label">Pruébalo sin gastar</p>
     <ol class="steps">
-      <li>En tu flujo (o macro), cambia por un momento el <i>Package</i> (la app que escucha) a <b>${esc(br.name)}</b>${br.pkg ? ` (<code>${br.pkg}</code>)` : ''} y déjalo encendido.</li>
-      <li>Toca este botón: la app manda una notificación de compra falsa de $1.00. Si todo está bien, se abre FinanciaBass y dice <b>“¡Funciona!”</b> (no registra nada).</li>
+      <li>En tu flujo (o macro), cambia por un momento el <i>Package</i> (la app que escucha) a <b>${esc(br.name)}</b>${br.pkg ? ` (<code>${br.pkg}</code>${br.name === 'Brave' ? '; si usas Brave Beta, <code>com.brave.browser_beta</code>' : ''})` : ''}, guarda y déjalo encendido. Revisa que ${esc(br.name)} tenga permiso de notificaciones en Android.</li>
+      <li>Toca este botón (si pregunta, permite las notificaciones): la app manda una notificación de compra falsa de $1.00. Si todo está bien, se abre una pestaña con FinanciaBass que dice <b>“¡Funciona!”</b> (no registra nada). Ciérrala, abre el ícono y aquí debe decir “Última prueba: funcionó”.</li>
       <li>Regresa el <i>Package</i> a Google Wallet (o a tu banco). Si se te olvida, la app ignora lo que venga de ${esc(br.name)} y te lo recuerda.</li>
     </ol>
     <button class="btn sm" data-action="cap-test">${icon('bell', 16)}Mandar notificación de prueba</button>
@@ -350,13 +350,18 @@ function captureGroup(state, d) {
   </div>`;
   const where = br.name === 'Chrome'
     ? `Las compras se abren en tu navegador predeterminado y se guardan en el navegador donde instalaste la app. Si la instalaste desde Chrome, deja Chrome como predeterminado (<b>Configuración → Apps → Apps predeterminadas → App de navegador</b>). Si la compra se abre en una pestaña en vez de la app: <b>Configuración → Apps → FinanciaBass → Abrir de forma predeterminada</b>, activa <b>Abrir vínculos admitidos</b> (en Android 16 elige <b>En la app</b>), toca <b>Agregar vínculo</b> y marca <b>bassandres.github.io</b>.`
-    : `Tus datos de FinanciaBass viven en <b>${esc(br.name)}</b> (el navegador donde la estás usando). Las compras se abren en tu navegador predeterminado, así que deja <b>${esc(br.name)}</b> como predeterminado (<b>Configuración → Apps → Apps predeterminadas → App de navegador</b>). Si cambias a otro, las compras llegarían a un lugar sin tus datos. Cada compra abre una pestaña nueva; puedes cerrarla.`;
+    : `Tus datos de FinanciaBass viven en <b>${esc(br.name)}</b> (el navegador donde la estás usando). Las compras se abren en tu navegador predeterminado, en una pestaña normal, así que deja <b>${esc(br.name)}</b> como predeterminado (<b>Configuración → Apps → Apps predeterminadas → App de navegador</b>). Si cambias a otro, las compras llegarían a un lugar sin tus datos. La pestaña y el ícono comparten los datos: cuando salga “Registrado”, dale <b>Atrás</b> y la pestaña se cierra.`;
+  const brave = br.name !== 'Brave' ? '' : `<div class="notice warn">${icon('shield')}<p><b>En Brave, que nada borre tus datos.</b>
+    En ${'⋮'} → Configuración → <b>Escudos y privacidad de Brave</b>: deja apagado <b>Borrar datos al salir</b> (borra todo la siguiente vez que Brave arranca, aunque lo abra una compra) y en <b>Triturar</b> pon la eliminación automática en <b>Nunca</b>.
+    En FinanciaBass, en el león (Escudos), deja <b>Bloquear cookies de terceros</b>, nunca “todas”. No la uses en pestañas privadas y nunca “tritures” este sitio.
+    Lo que tienes en la pantalla de inicio es un acceso directo de Brave (Brave no puede instalar apps de verdad, solo Chrome) y está bien así. Haz un respaldo cada semana: las copias automáticas viven en el mismo Brave.</p></div>`;
   const android = `
     <p class="foot top0"><b>Lo más rápido: la notificación de Google Wallet.</b> Sale en cuanto acercas el celular a la terminal. Una app de automatización la lee y abre FinanciaBass con la compra. Si también llega la del banco, solo se registra una vez.</p>
     ${apps}
     ${app === 'automation' ? automation : app === 'paid' ? paid : automate}
     ${test}
-    <p class="foot">${where}</p>`;
+    <p class="foot">${where}</p>
+    ${brave}`;
   const ios = `
     <p class="foot top0"><b>Con Apple Pay, al instante:</b> el iPhone avisa a la app Atajos en cuanto se confirma el pago en Wallet. iPhone no deja que una app web se abra sola, así que el atajo copia la compra y tú la pegas con un toque.</p>
     <ol class="steps">

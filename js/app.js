@@ -291,10 +291,10 @@ const actions = {
     if (!('Notification' in window) || !navigator.serviceWorker) return toast('Este navegador no puede mandar notificaciones de prueba');
     let perm = Notification.permission;
     if (perm === 'default') perm = await Notification.requestPermission();
-    if (perm !== 'granted') return toast(`Permite las notificaciones de esta página en ${browserInfo().name} para hacer la prueba`);
+    if (perm !== 'granted') return toast(`Permite las notificaciones de esta página: en ${browserInfo().name}, Configuración del sitio → Notificaciones → bassandres.github.io → Permitir`);
     try {
       const reg = await navigator.serviceWorker.ready;
-      await reg.showNotification('PRUEBA FinanciaBass', { body: TEST_TEXT, tag: 'fb-test', icon: './icons/icon-192.png' });
+      await reg.showNotification('PRUEBA FinanciaBass', { body: TEST_TEXT, tag: `fb-test-${Date.now()}`, icon: './icons/icon-192.png' });
       toast('Listo: mandé la notificación de prueba. Si Automate la ve, se abre la app y dice “¡Funciona!”');
     } catch { toast('No pude mandar la notificación de prueba'); }
   },
