@@ -53,6 +53,7 @@ function stepHtml(today) {
   if (step === 0) {
     return `<div class="brand-mark">${icon('savings', 30)}</div>
       <h1>FinanciaBass</h1>
+      ${ctx.stray ? `<div class="notice warn">${icon('alert')}<p><b>${ctx.stray.test ? 'Llegó la prueba de captura' : `Llegó una compra${ctx.stray.amount ? ` de ${money(ctx.stray.amount)}` : ''}${ctx.stray.desc ? ` en ${esc(ctx.stray.desc)}` : ''}`}, pero aquí no están tus datos.</b> Las compras se abren en tu navegador predeterminado (${esc(ctx.browser)}) y tus datos viven en el navegador donde instalaste la app. Cambia tu navegador predeterminado a ese en <b>Configuración → Apps → Apps predeterminadas → App de navegador</b>, o usa la app desde ${esc(ctx.browser)}.</p></div>` : ''}
       ${ctx.loadError ? `<div class="notice bad">${icon('alert')}<p><b>No pude abrir tus datos guardados</b> (${esc(ctx.loadError)}). No los borré: descárgalos y restáuralos, o restaura una copia automática.</p>
         <div class="notice-actions"><button type="button" class="btn sm" data-action="recovery-download">Descargar</button><button type="button" class="btn sm ghost" data-action="auto-backups">Copias automáticas</button></div></div>` : ''}
       <p class="lead">Cada día sabes cuánto puedes gastar. Pagas tus tarjetas a tiempo y lo que no uses se acumula.</p>

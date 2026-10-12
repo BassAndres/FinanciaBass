@@ -37,3 +37,16 @@ export function platform() {
 }
 // ¿Abierta como app instalada (pantalla de inicio) y no en el navegador?
 export const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+
+// Navegador en el que está abierta la app (tus datos viven ahí) y su paquete de Android.
+export function browserInfo() {
+  const ua = navigator.userAgent || '';
+  if (navigator.brave) return { name: 'Brave', pkg: 'com.brave.browser' };
+  if (/SamsungBrowser/.test(ua)) return { name: 'Samsung Internet', pkg: 'com.sec.android.app.sbrowser' };
+  if (/EdgA\//.test(ua)) return { name: 'Edge', pkg: 'com.microsoft.emmx' };
+  if (/OPR\//.test(ua)) return { name: 'Opera', pkg: 'com.opera.browser' };
+  if (/Firefox\//.test(ua)) return { name: 'Firefox', pkg: 'org.mozilla.firefox' };
+  if (/CriOS|Chrome\//.test(ua)) return { name: 'Chrome', pkg: 'com.android.chrome' };
+  if (/Safari\//.test(ua)) return { name: 'Safari', pkg: null };
+  return { name: 'tu navegador', pkg: null };
+}

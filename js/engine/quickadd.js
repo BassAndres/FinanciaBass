@@ -116,6 +116,13 @@ export function rawFromUrl(search, hash = '') {
   }
 }
 
+// Prueba de la captura: la app manda esta notificación; si regresa por la URL, la captura funciona de punta a punta.
+export const TEST_TEXT = 'Compraste $1.00 en PRUEBA FINANCIABASS';
+export const isCaptureTest = (text) => /PRUEBA FINANCIABASS/i.test(String(text || ''));
+// Paquetes de navegadores: una "compra" que viene de ahí no es de tu banco (el flujo se quedó apuntando a la prueba).
+export const BROWSER_PKGS = ['com.brave.browser', 'com.android.chrome', 'com.sec.android.app.sbrowser', 'com.microsoft.emmx', 'com.opera.browser', 'org.mozilla.firefox'];
+export const fromBrowserPkg = (extId) => BROWSER_PKGS.some((p) => String(extId || '').startsWith(`${p}-`));
+
 // Convierte los parámetros de la URL en un borrador de movimiento. No toca el estado.
 export function parseIntent(params, settings) {
   const get = (k) => (params.get(k) ?? '').trim();

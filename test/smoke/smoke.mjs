@@ -90,6 +90,28 @@ await page.locator('.hero-amount').waitFor();
 const hm = await page.evaluate(() => window.fb.state.tx.find((t) => t.amount === 31000));
 assert.deepEqual([hm?.desc, hm?.account], ['H&M Perisur', 'tarjeta-x']);
 assert.equal(await page.evaluate(() => location.hash), '');
+// Prueba de captura: la notificación de prueba regresa por la URL de Automate; no se guarda nada.
+const nTx = await page.evaluate(() => window.fb.state.tx.length);
+await page.goto(`${base}?via=wallet&id=com.brave.browser-7-1&k=${tok}&t=PRUEBA%20FinanciaBass&raw=${encodeURIComponent('Compraste $1.00 en PRUEBA FINANCIABASS')}`);
+await page.locator('.hero-amount, #main h1').first().waitFor();
+assert.equal(await page.evaluate(() => window.fb.state.tx.length), nTx);
+assert.equal(await page.evaluate(() => window.fb.state.settings.capture?.testOk?.via), 'wallet');
+// Si el flujo se quedó escuchando al navegador, lo que venga de ahí se ignora.
+await page.goto(`${base}?via=wallet&id=com.brave.browser-9-2&k=${tok}&t=Brave&raw=${encodeURIComponent('Oferta $99.00 en tienda')}`);
+await page.locator('.hero-amount').waitFor();
+assert.equal(await page.evaluate(() => window.fb.state.tx.length), nTx);
+// El botón de prueba manda la notificación sin errores.
+// (Chromium sin pantalla siempre dice "denied" en notificaciones: se simula la API.)
+await page.goto(`${base}#/mas`);
+await page.evaluate(() => {
+  Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true });
+  ServiceWorkerRegistration.prototype.showNotification = async function (title, opts) { window.__notified = [title, opts.body]; };
+});
+await page.click('[data-action="cap-test"]');
+await page.locator('#toast:not([hidden])').waitFor();
+assert.match(await page.locator('#toast').textContent(), /mandé la notificación de prueba/);
+assert.deepEqual(await page.evaluate(() => window.__notified), ['PRUEBA FinanciaBass', 'Compraste $1.00 en PRUEBA FINANCIABASS']);
+await page.goto(`${base}#/hoy`);
 // iPhone: pegar lo que copió el atajo de Wallet (dos compras, una repetida al pegar otra vez).
 await page.evaluate(() => { window.__clip = 'FB|$45.00|Starbucks|Tarjeta X|1 oct 2026 10:00\nFB|$5.00|Metro|Tarjeta X|1 oct 2026 10:30'; });
 await page.evaluate(() => { Object.defineProperty(navigator, 'clipboard', { value: { readText: async () => window.__clip, writeText: async () => {} }, configurable: true }); });
@@ -98,6 +120,10 @@ await page.evaluate(() => window.fb.paste());
 const pasted = await page.evaluate(() => window.fb.state.tx.filter((t) => t.via === 'wallet' && t.amount !== 8900).map((t) => [t.amount, t.cat, t.account]));
 assert.deepEqual(pasted.sort(), [[4500, 'otros', 'tarjeta-x'], [500, 'transporte', 'tarjeta-x']].sort());
 await page.evaluate(() => localStorage.clear());
+// Una compra que llega a un navegador sin datos avisa en vez de perderse.
+await page.goto(`${base}?via=wallet&id=x1&k=abc&raw=${encodeURIComponent('$45.00 con Visa')}&t=OXXO`);
+await page.getByText('pero aquí no están tus datos').waitFor();
+await page.evaluate(() => { localStorage.clear(); sessionStorage.clear(); });
 
 await page.goto(`${base}#setup=${code}`);
 await page.reload();

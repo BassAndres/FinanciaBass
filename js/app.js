@@ -2,10 +2,10 @@ import {
   computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
-  parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl,
+  parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl, isCaptureTest, fromBrowserPkg, TEST_TEXT,
 } from './engine/index.js';
 import * as store from './store.js';
-import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone } from './ui/dom.js';
+import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo } from './ui/dom.js';
 import { hoyView, movsView, tarjetasView, planView, masView, entrySheet } from './ui/views.js';
 import { renderWizard, clearWizard } from './ui/wizard.js';
 import { icon } from './ui/icons.js';
@@ -17,6 +17,7 @@ import {
 let state = store.load();
 let dash = null;
 let draft = null;
+let stray = null; // compra que llegó a un navegador sin datos
 const today = () => localToday();
 const main = $('#main');
 
@@ -80,7 +81,7 @@ function render() {
   document.body.classList.toggle('no-state', !state);
   if (!state) {
     renderWizard(main, {
-      today, token: uid, toast, applyCode: applyConfigCode, loadError: store.loadError,
+      today, token: uid, toast, applyCode: applyConfigCode, loadError: store.loadError, stray, browser: browserInfo().name,
       finish: (s) => replaceState(s, '¡Listo! Este es tu número de hoy'),
     });
     return;
@@ -98,7 +99,7 @@ function render() {
   dash.outlook = monthOutlook(state, t);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt(t);
-  dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent };
+  dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent, browser: browserInfo() };
   const route = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';
   main.innerHTML = (ROUTES[route] || hoyView)(state, dash);
   document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === `#/${route}`));
@@ -286,6 +287,17 @@ const actions = {
   new: (el) => openEntry({ cat: el.dataset.cat }),
   paste: () => pasteCapture(),
   'cap-os': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), os: el.dataset.os }; }),
+  async 'cap-test'() {
+    if (!('Notification' in window) || !navigator.serviceWorker) return toast('Este navegador no puede mandar notificaciones de prueba');
+    let perm = Notification.permission;
+    if (perm === 'default') perm = await Notification.requestPermission();
+    if (perm !== 'granted') return toast(`Permite las notificaciones de esta página en ${browserInfo().name} para hacer la prueba`);
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      await reg.showNotification('PRUEBA FinanciaBass', { body: TEST_TEXT, tag: 'fb-test', icon: './icons/icon-192.png' });
+      toast('Listo: mandé la notificación de prueba. Si Automate la ve, se abre la app y dice “¡Funciona!”');
+    } catch { toast('No pude mandar la notificación de prueba'); }
+  },
   'cap-app': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), app: el.dataset.app }; }),
   dismiss: (el) => commit((s) => { s.dismissed[el.dataset.key] = true; }),
   async install() {
@@ -423,7 +435,15 @@ function handleIntents() {
   if (lenient != null) params.set('raw', lenient);
   const keepHash = hash.startsWith('#/') ? hash : '';
   history.replaceState(null, '', location.pathname + keepHash);
-  if (!state) return;
+  if (!state) {
+    // Llegó una compra a un navegador donde no tienes tus datos: se avisa en vez de perderla sin decir nada.
+    if (params.get('raw') || params.get('add')) {
+      const n = params.get('raw') ? parseNotification(params.get('raw'), { title: params.get('t') || '' }) : { amount: parseAmount(params.get('add')), merchant: params.get('desc') };
+      stray = { amount: n.amount || 0, desc: n.merchant || '', test: isCaptureTest(params.get('raw')) };
+      render();
+    }
+    return;
+  }
   if (params.get('view') && ROUTES[params.get('view')]) { location.hash = `#/${params.get('view')}`; }
   const intent = parseIntent(params, state.settings);
   if (!intent) {
@@ -432,6 +452,15 @@ function handleIntents() {
     else if (params.get('paste') !== null) pasteSheet();
     return;
   }
+  // Prueba de la captura (notificación que manda la propia app): no se guarda, solo confirma que todo funciona.
+  if (isCaptureTest(params.get('raw'))) {
+    if (!intent.trusted) return toast('Llegó la prueba, pero la clave (k=) no coincide. Vuelve a copiar la fórmula de Más → Captura automática.');
+    commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), testOk: { date: today(), via: intent.via, browser: browserInfo().name } }; },
+      `¡Funciona! La prueba llegó por ${browserInfo().name}. Ahora regresa el Package del flujo a Google Wallet.`);
+    location.hash = '#/mas';
+    return;
+  }
+  if (fromBrowserPkg(intent.extId)) return toast(`Ignoré una notificación de ${browserInfo().name}. Regresa el Package del flujo a Google Wallet (o a tu banco).`);
   if (intent.ignore) return toast(`No registré la notificación: ${intent.ignore}`);
   const tx = intent.tx;
   tx.date ||= today();

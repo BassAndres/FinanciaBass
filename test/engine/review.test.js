@@ -153,3 +153,12 @@ test('texto al final de la dirección: se recupera con "&", "#" y "%" sin codifi
   const r = parseIntent(new URLSearchParams({ via: 'bank', k: 'tok123', raw: rawFromUrl('?via=bank&k=tok123&raw=Compraste $250.00 en H&M con tu tarjeta', '') }), demoState().settings);
   assert.deepEqual([r.tx.amount, r.tx.desc], [25000, 'H&M']);
 });
+
+test('prueba de captura y notificaciones de un navegador', async () => {
+  const { isCaptureTest, fromBrowserPkg, TEST_TEXT, parseNotification: pn } = await import('../../js/engine/quickadd.js');
+  assert.ok(isCaptureTest(TEST_TEXT));
+  assert.equal(pn(TEST_TEXT).amount, 100);
+  assert.ok(fromBrowserPkg('com.brave.browser-12-1791'));
+  assert.ok(!fromBrowserPkg('com.google.android.apps.walletnfcrel-3-1791'));
+  assert.ok(!fromBrowserPkg('20261012101500'));
+});

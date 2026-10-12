@@ -335,11 +335,28 @@ function captureGroup(state, d) {
     <p class="foot"><b>Tasker</b> (MX$95, pago único): perfil con el evento <b>IU → Notificación</b> de Google Wallet; el título está en <code>%evtprm2</code> y el texto en <code>%evtprm3</code>. Codifica cada uno con <b>Convertir Variable</b> (<i>Función</i>: <b>Codificar URL</b>; <i>Almacenar Resultado En</i>: <code>%fbtit</code> y <code>%fbtxt</code>) y ábrelos con <b>Navegar a URL</b> usando esta dirección (para tu banco, otro perfil con <code>via=bank</code>):</p>
     ${copyBox(tail('wallet', '%TIMEMS', '%fbtit', '%fbtxt'))}
     <p class="foot">En ambos da <b>acceso a notificaciones</b>, “Mostrar sobre otras apps” y batería “Sin restricciones” (las rutas están en la opción Automate). En Xiaomi, Redmi o POCO también “Mostrar ventanas emergentes mientras se ejecuta en segundo plano” e “Inicio automático”.</p>`;
+  const br = d.env?.browser || { name: 'tu navegador', pkg: null };
+  const ok = st.capture?.testOk;
+  const test = `<div class="cap-test">
+    <p class="label">Pruébalo sin gastar</p>
+    <ol class="steps">
+      <li>En tu flujo (o macro), cambia por un momento el <i>Package</i> (la app que escucha) a <b>${esc(br.name)}</b>${br.pkg ? ` (<code>${br.pkg}</code>)` : ''} y déjalo encendido.</li>
+      <li>Toca este botón: la app manda una notificación de compra falsa de $1.00. Si todo está bien, se abre FinanciaBass y dice <b>“¡Funciona!”</b> (no registra nada).</li>
+      <li>Regresa el <i>Package</i> a Google Wallet (o a tu banco). Si se te olvida, la app ignora lo que venga de ${esc(br.name)} y te lo recuerda.</li>
+    </ol>
+    <button class="btn sm" data-action="cap-test">${icon('bell', 16)}Mandar notificación de prueba</button>
+    ${ok ? `<p class="foot">${icon('check', 14, 'inline')} Última prueba: <b>funcionó el ${fmtDate(ok.date)}</b> en ${esc(ok.browser || '')}.</p>` : ''}
+    <p class="foot">La prueba de verdad es tu siguiente pago con el celular (el metro sirve): debe salir “Registrado” con el monto y el comercio.</p>
+  </div>`;
+  const where = br.name === 'Chrome'
+    ? `Las compras se abren en tu navegador predeterminado y se guardan en el navegador donde instalaste la app. Si la instalaste desde Chrome, deja Chrome como predeterminado (<b>Configuración → Apps → Apps predeterminadas → App de navegador</b>). Si la compra se abre en una pestaña en vez de la app: <b>Configuración → Apps → FinanciaBass → Abrir de forma predeterminada</b>, activa <b>Abrir vínculos admitidos</b> (en Android 16 elige <b>En la app</b>), toca <b>Agregar vínculo</b> y marca <b>bassandres.github.io</b>.`
+    : `Tus datos de FinanciaBass viven en <b>${esc(br.name)}</b> (el navegador donde la estás usando). Las compras se abren en tu navegador predeterminado, así que deja <b>${esc(br.name)}</b> como predeterminado (<b>Configuración → Apps → Apps predeterminadas → App de navegador</b>). Si cambias a otro, las compras llegarían a un lugar sin tus datos. Cada compra abre una pestaña nueva; puedes cerrarla.`;
   const android = `
     <p class="foot top0"><b>Lo más rápido: la notificación de Google Wallet.</b> Sale en cuanto acercas el celular a la terminal. Una app de automatización la lee y abre FinanciaBass con la compra. Si también llega la del banco, solo se registra una vez.</p>
     ${apps}
     ${app === 'automation' ? automation : app === 'paid' ? paid : automate}
-    <p class="foot">Usa Chrome como navegador predeterminado (<b>Configuración → Apps → Apps predeterminadas → App de navegador → Chrome</b>); en otros la app no guarda la compra. Si la compra se abre en el navegador en vez de la app: <b>Configuración → Apps → FinanciaBass → Abrir de forma predeterminada</b>, activa <b>Abrir vínculos admitidos</b> (en Android 16 elige <b>En la app</b>), toca <b>Agregar vínculo</b> y marca <b>bassandres.github.io</b>.</p>`;
+    ${test}
+    <p class="foot">${where}</p>`;
   const ios = `
     <p class="foot top0"><b>Con Apple Pay, al instante:</b> el iPhone avisa a la app Atajos en cuanto se confirma el pago en Wallet. iPhone no deja que una app web se abra sola, así que el atajo copia la compra y tú la pegas con un toque.</p>
     <ol class="steps">
