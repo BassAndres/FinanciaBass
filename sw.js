@@ -1,5 +1,5 @@
 // Service worker: guarda la app para que abra sin internet. Sube VERSION cuando cambie algún archivo.
-const VERSION = 'fb-v22';
+const VERSION = 'fb-v23';
 const FILES = [
   './',
   './index.html',
@@ -26,7 +26,7 @@ const FILES = [
   './js/engine/ledger.js',
   './js/engine/money.js',
   './js/engine/periods.js',
-  './js/engine/quickadd.js', './js/engine/setup.js',
+  './js/engine/quickadd.js', './js/engine/setup.js', './js/engine/recommend.js',
   './js/engine/schedule.js',
   './js/engine/state.js',
 ];

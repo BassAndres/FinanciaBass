@@ -3,15 +3,16 @@ import {
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
   parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl, isCaptureTest, fromBrowserPkg, TEST_TEXT,
+  recommendScheduleCards, changeScheduleAccount,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo } from './ui/dom.js';
-import { hoyView, movsView, tarjetasView, planView, masView, entrySheet } from './ui/views.js';
+import { hoyView, movsView, tarjetasView, planView, masView, entrySheet, billGroups, partReason } from './ui/views.js';
 import { renderWizard, clearWizard } from './ui/wizard.js';
 import { icon } from './ui/icons.js';
 import {
   initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
-  faresSheet, periodSheet, breakdownSheet, cycleDueSheet,
+  faresSheet, periodSheet, breakdownSheet, cycleDueSheet, planWhySheet, recSheet,
 } from './ui/editors.js';
 
 let state = store.load();
@@ -99,6 +100,7 @@ function render() {
   dash.outlook = monthOutlook(state, t);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt(t);
+  dash.recs = recommendScheduleCards(state, t, dash.balances);
   dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent, browser: browserInfo() };
   const route = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';
   main.innerHTML = (ROUTES[route] || hoyView)(state, dash);
@@ -318,6 +320,16 @@ const actions = {
   },
   'inst-open': (el) => instanceSheet(dash.instances.find((x) => x.id === el.dataset.id)),
   breakdown: () => breakdownSheet(dash),
+  'rec-open'(el) {
+    const rec = dash.recs.items.find((x) => x.schedule === el.dataset.id);
+    if (!rec) return;
+    recSheet(rec, (card) => {
+      if (card === rec.current?.card) return toast('Se queda igual');
+      const name = state.accounts.find((a) => a.id === card)?.name;
+      commit((s) => changeScheduleAccount(s, rec.schedule, card, today(), uid), `${rec.name}: desde el siguiente cargo con ${name}`, true);
+    });
+  },
+  'plan-why': (el) => planWhySheet(dash, el.dataset.id, { billGroups, partReason }),
   'acc-list': () => accountsList(),
   'acc-edit': (el) => accountSheet(state.accounts.find((a) => a.id === el.dataset.acc)),
   'sched-list': () => schedulesList(),

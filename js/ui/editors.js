@@ -392,3 +392,40 @@ export function breakdownSheet(d) {
       ${row('Dinero neto hoy', money(d.net), '', 'efectivo + banco − tarjetas')}
     </div>`);
 }
+
+// ---------- ¿por qué este plan de pagos? ----------
+export function planWhySheet(d, id, { billGroups, partReason }) {
+  const g = billGroups(d).find((x) => x.id === id);
+  if (!g) return toast('Ese pago ya no está en el plan');
+  const row = (label, value, cls = '', hint = '') => `<div class="brow ${cls}"><span>${label}${hint ? `<small>${hint}</small>` : ''}</span><b>${value}</b></div>`;
+  const limited = g.parts.filter((p) => p.why?.limit);
+  openSheet(`<h2>${esc(g.cardName)}: ${money(g.total)}</h2>
+    <p class="foot top0">Fecha límite: <b>${fmtDate(g.due)}</b>. Si pagas todo antes, no pagas intereses.</p>
+    <div class="panel">${g.parts.map((p, i) => `<div class="item"><span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>
+      <span class="item-body"><span class="item-title">${g.parts.length > 1 ? `Parte ${i + 1}: ` : ''}${money(p.amount)}</span><span class="item-meta">${p.date <= d.today ? 'Hoy' : partReason(p).replace(/^./, (c) => c.toUpperCase())}${p.onDue ? '' : ' · adelanto opcional'}</span></span></div>`).join('')}</div>
+    ${limited.map((p) => `<p class="label">¿Por qué no todo el ${fmtDate(p.date, false)}?</p>
+      <p class="foot top0">El día más apretado es el <b>${fmtDate(p.why.limit.bind)}</b>, antes de que te vuelva a entrar dinero. Te sugiero pagar lo que te deja ese día con tu colchón y con dinero para tus gastos:</p>
+      <div class="panel pad breakdown">${p.why.limit.items.map((it) => row(it.label, money(it.amount, { sign: it.amount > 0 }), it.amount < 0 ? 'neg' : 'pos',
+        it.detail ? `${it.detail.days} días × ${money(it.detail.each)}` : '')).join('')}
+        <div class="brow total"><span>Puedes pagar el ${fmtDate(p.date, false)}</span><b>${money(p.why.limit.total)}</b></div></div>`).join('')}
+    <p class="foot">Es una sugerencia: si tienes más dinero del que la app cree (gastaste menos o te entró algo), puedes pagar más y el plan se recalcula solo. Lo único obligatorio es cubrir todo antes del ${fmtDate(g.due, false)}.</p>
+    <button type="button" class="btn wide lg" data-action="pay" data-card="${esc(g.card)}" data-amount="${(g.parts.find((p) => p.date <= d.today) || g.parts[0]).amount}">${icon('pay', 18)}Ya pagué</button>`);
+}
+
+// ---------- ¿con qué tarjeta pagar este fijo? ----------
+export function recSheet(rec, onPick) {
+  const pct = (x) => (x == null ? '' : ` · uso ${Math.round(x * 100)}%`);
+  openSheet(`<h2>${esc(rec.name)} · ${money(rec.amount)}</h2>
+    <p class="foot top0">Siguiente cargo: <b>${fmtDate(rec.next)}</b>. Así queda según la tarjeta:</p>
+    <div class="panel">${rec.options.map((o) => `<button type="button" class="item" data-card="${esc(o.card)}">
+      <span class="ic ${o.card === rec.best.card ? 'hue-green' : 'hue-gray'}">${icon(o.card === rec.best.card ? 'check' : 'card', 18)}</span>
+      <span class="item-body"><span class="item-title">${esc(o.name)}${o.card === rec.current?.card ? ' <span class="tag">ahora</span>' : ''}${o.card === rec.best.card ? ' <span class="badge">Mejor</span>' : ''}</span>
+      <span class="item-meta">${o.days} días para pagarlo · corta el ${fmtDate(o.cut, false)}, pagas hasta el ${fmtDate(o.due, false)}${pct(o.util)}${o.over ? ' (pasa de 30%)' : ''}</span></span>
+      <b class="amt">${o.days} d</b></button>`).join('')}</div>
+    <p class="foot">Toca una tarjeta para usarla desde el siguiente cargo (lo ya pagado no se mueve). Si el cargo es en dólares, revisa que esa tarjeta no cobre comisión por compras en el extranjero. Acuérdate de cambiar también la tarjeta en el servicio (por ejemplo, en tu cuenta de Spotify).</p>`, (body) => {
+    body.onclick = (e) => {
+      const c = e.target.closest('[data-card]')?.dataset.card;
+      if (c) { closeSheet(); onPick(c); }
+    };
+  });
+}

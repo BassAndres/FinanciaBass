@@ -166,37 +166,66 @@ function liquidity(state, ctx, P, t, { liquid, disponible, base, statements }) {
   const flow = new Array(days).fill(0);
   const inflowDays = new Set();
   const causes = new Array(days).fill(null).map(() => []);
+  // Cada entrada o salida de dinero, para poder explicar después de dónde sale cada adelanto.
+  const events = [];
+  const ev = (idx, amount, label, kind) => { flow[idx] += amount; events.push({ idx, amount, label, kind }); };
   const tr = st.transport;
   for (const i of future) {
     if (done.has(i.id) || i.skipped) continue;
     const idx = diffDays(i.date, t);
     if (idx < 1 || idx >= days) continue;
     const a = accounts[i.account];
-    if (i.kind === 'income' && isLiquid(a)) { flow[idx] += i.amount; inflowDays.add(idx); }
-    else if (i.kind !== 'income' && isLiquid(a)) { flow[idx] -= i.amount; causes[idx].push(i.name); }
+    if (i.kind === 'income' && isLiquid(a)) { ev(idx, i.amount, i.name, 'in'); inflowDays.add(idx); }
+    else if (i.kind !== 'income' && isLiquid(a)) { ev(idx, -i.amount, i.name, 'out'); causes[idx].push(i.name); }
   }
   // Movimientos ya registrados con fecha futura (p. ej. un pago programado): salen ese día.
   for (const x of state.tx) {
     if (x.date <= t) continue;
     const idx = diffDays(x.date, t);
     if (idx >= days) continue;
-    for (const [id, v] of Object.entries(txDeltas(x, accounts))) if (isLiquid(accounts[id])) flow[idx] += v;
+    for (const [id, v] of Object.entries(txDeltas(x, accounts))) if (isLiquid(accounts[id])) ev(idx, v, x.desc || 'Movimiento programado', v > 0 ? 'in' : 'out');
     if (x.type === 'expense' && isLiquid(accounts[x.account])) causes[idx].push(x.desc || 'gasto programado');
   }
   for (let idx = 1; idx < days; idx++) {
     const d = addDays(t, idx);
-    if (d <= P.e) flow[idx] -= Math.max(0, base);
-    if (tr?.rate && isLiquid(accounts[tr.account]) && (!tr.weekdays || tr.weekdays.includes(weekday(d)))) flow[idx] -= tr.rate;
+    if (d <= P.e && base > 0) ev(idx, -base, 'base', 'base');
+    if (tr?.rate && isLiquid(accounts[tr.account]) && (!tr.weekdays || tr.weekdays.includes(weekday(d)))) ev(idx, -tr.rate, 'transport', 'transport');
   }
   const c = new Array(days);
-  let run = liquid - Math.max(0, disponible);
+  const start = liquid - Math.max(0, disponible);
+  let run = start;
   for (let idx = 0; idx < days; idx++) { run += idx === 0 ? 0 : flow[idx]; c[idx] = run; }
   // Cada estado de cuenta se paga en su fecha límite…
   const due = statements.map((s) => ({ s, idx: Math.max(0, Math.min(days - 1, diffDays(s.due, t))) }));
-  for (const { s, idx } of due) for (let j = idx; j < days; j++) { c[j] -= s.remaining; if (j === idx) causes[j].push(`pago ${s.cardName}`); }
+  // Lo que cada estado de cuenta le quita a tu dinero cada día (para el desglose).
+  const eff = due.map(() => new Array(days).fill(0));
+  due.forEach(({ s, idx }, k) => { for (let j = idx; j < days; j++) { c[j] -= s.remaining; eff[k][j] += s.remaining; if (j === idx) causes[j].push(`pago ${s.cardName}`); } });
+  // Desglose de por qué el día b solo alcanza para cierto adelanto del estado de cuenta k.
+  const explain = (b, k) => {
+    const items = [{ label: 'Tienes hoy en tus cuentas y efectivo', amount: liquid }];
+    if (disponible > 0) items.push({ label: 'Lo que puedes gastar hoy', amount: -disponible });
+    const group = (kind) => {
+      const by = new Map();
+      for (const e of events) if (e.kind === kind && e.idx >= 1 && e.idx <= b) { const g = by.get(e.label) || { n: 0, amount: 0 }; g.n++; g.amount += e.amount; by.set(e.label, g); }
+      return [...by.entries()].map(([label, g]) => ({ label: g.n > 1 ? `${label} (${g.n} veces)` : label, amount: g.amount }));
+    };
+    items.push(...group('in').map((x) => ({ ...x, label: `Te entra: ${x.label}` })));
+    items.push(...group('out'));
+    const nBase = events.filter((e) => e.kind === 'base' && e.idx >= 1 && e.idx <= b).length;
+    if (nBase) items.push({ label: 'Tus gastos del día', detail: { days: nBase, each: base }, amount: -nBase * base });
+    const nTr = events.filter((e) => e.kind === 'transport' && e.idx >= 1 && e.idx <= b).length;
+    if (nTr) items.push({ label: 'Transporte', detail: { days: nTr, each: tr.rate }, amount: -nTr * tr.rate });
+    due.forEach(({ s }, j) => {
+      if (!eff[j][b]) return;
+      items.push({ label: j === k ? `Lo que ya le pagas antes a ${s.cardName}` : `Pago de ${s.cardName}`, amount: -eff[j][b] });
+    });
+    if (floor) items.push({ label: 'Tu colchón (mínimo en la cuenta)', amount: -floor });
+    return { bind: addDays(t, b), items, total: items.reduce((a, x) => a + x.amount, 0) };
+  };
+  const inflowNames = (z) => [...new Set(events.filter((e) => e.kind === 'in' && e.idx === z).map((e) => e.label))];
   // …y luego se adelanta todo lo posible: hoy y cada día que entra dinero, sin bajar del piso.
   const plan = [];
-  for (const { s, idx } of due) {
+  due.forEach(({ s, idx }, k) => {
     let remaining = s.remaining;
     const from = s.payFrom ? Math.max(0, diffDays(s.payFrom, t)) : 0;
     // "En su fecha límite": no se adelanta nada. "Lo antes posible": se abona hoy y cada día que entra dinero.
@@ -204,16 +233,18 @@ function liquidity(state, ctx, P, t, { liquid, disponible, base, statements }) {
       : [...new Set([0, from, ...inflowDays])].sort((a, b) => a - b).filter((z) => z >= from && z < idx);
     for (const z of candidates) {
       if (remaining <= 0) break;
-      let m = Infinity;
-      for (let j = z; j < idx; j++) m = Math.min(m, c[j]);
+      let m = Infinity, b = z;
+      for (let j = z; j < idx; j++) if (c[j] < m) { m = c[j]; b = j; }
       const x = Math.min(remaining, m - floor);
       if (x <= 0) continue;
-      for (let j = z; j < idx; j++) c[j] -= x;
-      plan.push({ date: addDays(t, z), card: s.card, cardName: s.cardName, amount: x, statement: s.id, due: s.due });
+      const why = { kind: z === 0 ? 'today' : z === from && s.payFrom ? 'payFrom' : 'inflow', names: inflowNames(z) };
+      if (x < remaining) why.limit = explain(b, k);
+      for (let j = z; j < idx; j++) { c[j] -= x; eff[k][j] += x; }
+      plan.push({ date: addDays(t, z), card: s.card, cardName: s.cardName, amount: x, statement: s.id, due: s.due, why });
       remaining -= x;
     }
-    if (remaining > 0) plan.push({ date: addDays(t, idx), card: s.card, cardName: s.cardName, amount: remaining, statement: s.id, due: s.due, onDue: true });
-  }
+    if (remaining > 0) plan.push({ date: addDays(t, idx), card: s.card, cardName: s.cardName, amount: remaining, statement: s.id, due: s.due, onDue: true, why: { kind: 'due', names: [] } });
+  });
   let min = Infinity, minIdx = 0;
   for (let idx = 0; idx < days; idx++) if (c[idx] < min) { min = c[idx]; minIdx = idx; }
   const short = min < floor ? floor - min : 0;

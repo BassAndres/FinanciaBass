@@ -29,10 +29,49 @@ function heroTone(d) {
   return 'ok';
 }
 
+// Plan de pagos agrupado por estado de cuenta: total, partes (fecha, monto, por qué ese día) y fecha límite.
+export function billGroups(d) {
+  const by = new Map();
+  for (const p of d.payPlan) { if (!by.has(p.statement)) by.set(p.statement, []); by.get(p.statement).push(p); }
+  return [...by.entries()].map(([id, parts]) => {
+    parts = [...parts].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+    return { id, card: parts[0].card, cardName: parts[0].cardName, due: parts[0].due, parts,
+      total: parts.reduce((a, p) => a + p.amount, 0), next: parts.find((p) => p.date > d.today) };
+  });
+}
+
+export const partReason = (p) => (p.why?.kind === 'due' ? 'en la fecha límite'
+  : p.why?.kind === 'inflow' ? `cuando te entra ${p.why.names.join(' y ') || 'dinero'}`
+    : p.why?.kind === 'payFrom' ? 'en cuanto se puede pagar (después del corte)' : 'hoy');
+
+const partsText = (g) => (g.parts.length === 1
+  ? `${g.parts[0].onDue ? 'En su fecha límite' : 'Paga todo'} el ${fmtDate(g.parts[0].date, false)}`
+  : `Paga ${g.parts.map((p) => `${money(p.amount)} el ${fmtDate(p.date, false)}`).join(' + ')}`);
+
+const billRow = (d, g) => {
+  const n = g.next || g.parts[0];
+  return item({
+    action: `data-action="plan-why" data-id="${esc(g.id)}"`,
+    lead: `<span class="date-chip"><b>${fmtDate(n.date, false).split(' ')[0]}</b>${fmtDate(n.date, false).split(' ')[1]}</span>`,
+    title: esc(g.cardName),
+    meta: `Debes ${money(g.total)} · ${partsText(g)} · límite ${fmtDate(g.due, false)}`,
+    trail: `<b class="amt">${money(n.amount)}</b>${icon('chevron', 16, 'mute')}`,
+  });
+};
+
+// "Parte 1 de 2 · el resto el 31 oct" para un pago que es solo una parte de lo que debes.
+function restNote(d, p) {
+  const g = billGroups(d).find((x) => x.id === p.statement);
+  if (!g || g.parts.length < 2) return '';
+  const i = g.parts.indexOf(g.parts.find((x) => x.date === p.date && x.amount === p.amount));
+  const rest = g.parts.slice(i + 1);
+  return ` · parte ${i + 1} de ${g.parts.length}${rest.length ? `; el resto (${money(rest.reduce((a, x) => a + x.amount, 0))}) ${rest.length === 1 ? `el ${fmtDate(rest[0].date, false)}` : 'después'}` : ''}`;
+}
+
 export function hoyView(state, d) {
   const P = d.period;
   const payToday = d.payPlan.filter((p) => p.date <= d.today);
-  const upcoming = d.payPlan.filter((p) => p.date > d.today).slice(0, 4);
+  const upcoming = billGroups(d).filter((g) => g.next).sort((a, b) => (a.next.date < b.next.date ? -1 : 1));
   const review = state.tx.filter((t) => t.review).slice(-5).reverse();
   const c = d.cardOfDay;
   const staleBackup = !state.settings.lastBackupAt || diffDays(d.today, state.settings.lastBackupAt) >= 7;
@@ -70,7 +109,7 @@ export function hoyView(state, d) {
   ${payToday.length ? group(payToday.every((p) => !p.onDue) ? 'Puedes adelantar hoy' : 'Pagos de tarjeta', `<div class="panel">${payToday.map((p) => item({
     lead: `<span class="ic hue-ink">${icon('card', 18)}</span>`,
     title: `${money(p.amount)} a ${esc(p.cardName)}`,
-    meta: p.onDue ? `Vence ${p.due <= d.today ? 'hoy' : `el ${fmtDate(p.due)}`}` : `Opcional · ya tienes el dinero. Fecha límite: ${fmtDate(p.due)}`,
+    meta: `${p.onDue ? `Vence ${p.due <= d.today ? 'hoy' : `el ${fmtDate(p.due)}`}` : `Opcional · ya tienes el dinero. Fecha límite: ${fmtDate(p.due)}`}${restNote(d, p)}`,
     trail: `<button class="btn sm" data-action="pay" data-card="${esc(p.card)}" data-amount="${p.amount}">Ya pagué</button>`,
   })).join('')}</div>${payToday.some((p) => !p.onDue) ? '<p class="foot">Adelantar es opcional: lo importante es pagar antes de la fecha límite. Si prefieres pagar en la fecha, cámbialo en Más → Editar → Periodo.</p>' : ''}`) : ''}
 
@@ -89,10 +128,7 @@ export function hoyView(state, d) {
 
   ${moneyGroup(state, d)}
 
-  ${upcoming.length ? group('Próximos pagos', `<div class="panel">${upcoming.map((p) => item({
-    lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
-    title: esc(p.cardName), meta: p.onDue ? 'Fecha límite' : `Adelanto sugerido · límite ${fmtDate(p.due, false)}`, trail: `<b class="amt">${money(p.amount)}</b>`,
-  })).join('')}</div>`, '<a class="link" href="#/tarjetas">Ver todo</a>') : ''}
+  ${upcoming.length ? group('Próximos pagos', `<div class="panel">${upcoming.slice(0, 4).map((g) => billRow(d, g)).join('')}</div>`, '<a class="link" href="#/tarjetas">Ver todo</a>') : ''}
 
   ${installNotice(state, d)}
   ${staleBackup ? `<div class="notice">${icon('shield')}<p><b>Haz un respaldo.</b> Tus datos solo viven en este celular.</p><div class="notice-actions"><button class="btn sm ghost" data-action="backup">Respaldar</button></div></div>` : ''}
@@ -214,7 +250,7 @@ export function tarjetasView(state, d) {
       ${s.live === 'bill' ? `<br>Ya cortó el ${fmtDate(s.cut, false)}: es lo que debías a esa fecha menos lo que ya pagaste.` : ''}
       ${s.payFrom && s.payFrom > d.today ? `<br>${s.cut ? `Es lo que llevas en este ciclo (se actualiza con cada compra): corta el ${fmtDate(s.cut, false)}. ` : ''}El banco te deja pagarlo desde el ${fmtDate(s.payFrom)}.` : ''}
       ${s.paid ? `<br>Ya abonaste ${money(s.paid)}.` : ''}
-      ${sugg.length ? `<br><span class="sugg">Sugerido: ${sugg.map((p) => `${money(p.amount)} ${p.date <= d.today ? 'hoy' : `el ${fmtDate(p.date, false)}`}`).join(', ')}</span>` : ''}</p></div>`;
+      ${sugg.length ? `<br><span class="sugg">Sugerido: ${sugg.map((p) => `${money(p.amount)} ${p.date <= d.today ? 'hoy' : `el ${fmtDate(p.date, false)}`}`).join(', ')}</span> <button type="button" class="link" data-action="plan-why" data-id="${esc(s.id)}">¿Por qué así?</button>` : ''}</p></div>`;
   }).join('')}
       <div class="ccard-actions">
         <button class="btn sm" data-action="pay" data-card="${esc(c.id)}">${icon('pay', 16)}Pagar</button>
@@ -223,11 +259,24 @@ export function tarjetasView(state, d) {
       </div>
     </article>`;
   }).join('')}
-  ${d.payPlan.length ? group('Plan de pagos', `<div class="panel">${d.payPlan.map((p) => item({
-    lead: `<span class="date-chip"><b>${fmtDate(p.date, false).split(' ')[0]}</b>${fmtDate(p.date, false).split(' ')[1]}</span>`,
-    title: esc(p.cardName), meta: p.onDue ? 'En su fecha límite' : `Adelanto opcional · límite ${fmtDate(p.due, false)}`, trail: `<b class="amt">${money(p.amount)}</b>`,
-  })).join('')}</div><p class="foot">${state.settings.payStrategy === 'due' ? 'Pagas cada tarjeta en su fecha límite.' : 'Te sugiero abonar en cuanto tengas el dinero (lo elegiste así). La fecha que importa es la límite.'} Siempre deja al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>`)
+  ${recGroup(d)}
+  ${d.payPlan.length ? group('Plan de pagos', `<div class="panel">${billGroups(d).sort((a, b) => (a.parts[0].date < b.parts[0].date ? -1 : 1)).map((g) => billRow(d, g)).join('')}</div><p class="foot">${state.settings.payStrategy === 'due' ? 'Pagas cada tarjeta en su fecha límite.' : 'Te sugiero abonar en cuanto tengas el dinero (lo elegiste así), en partes si no te alcanza todo. La fecha que importa es la límite.'} Toca una tarjeta para ver por qué. Siempre dejo al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>`)
     : `<div class="empty">${icon('check', 28)}<p>Sin pagos pendientes registrados.</p></div>`}`;
+}
+
+// ¿Con qué tarjeta conviene cada gasto fijo? (solo los que ya van a tarjeta de crédito)
+function recGroup(d) {
+  const r = d.recs;
+  if (!r || (!r.items.length && !r.idle.length)) return '';
+  return group('Tus fijos: ¿con qué tarjeta?', `<div class="panel">${r.items.map((i) => item({
+    action: `data-action="rec-open" data-id="${esc(i.schedule)}"`,
+    lead: `<span class="ic ${i.move ? 'hue-amber' : 'hue-green'}">${icon(i.move ? 'trend' : 'check', 18)}</span>`,
+    title: `${esc(i.name)} · ${money(i.amount, { decimals: false })}`,
+    meta: `${i.current ? `Con ${esc(i.current.name)}: ${i.current.days} días para pagarlo` : ''}${i.move ? ` · <b>mejor ${esc(i.best.name)}: ${i.best.days} días</b>` : ' · ya está en la mejor'}`,
+    trail: icon('chevron', 16, 'mute'),
+  })).join('')}</div>
+  ${r.idle.map((c) => `<p class="foot">${icon('info', 14, 'inline')} <b>${esc(c.name)}</b> no tiene cargos fijos. Si casi no la usas, ponle uno chico para que el banco no la dé por inactiva.</p>`).join('')}
+  <p class="foot">Días para pagar = del cargo a la fecha límite de esa tarjeta: un cargo justo después del corte se paga hasta ~50 días después. Solo cuento lo que ya pagas con tarjeta de crédito; lo de débito y efectivo no se toca.</p>`);
 }
 
 export function planView(state, d) {

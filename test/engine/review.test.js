@@ -162,3 +162,25 @@ test('prueba de captura y notificaciones de un navegador', async () => {
   assert.ok(!fromBrowserPkg('com.google.android.apps.walletnfcrel-3-1791'));
   assert.ok(!fromBrowserPkg('20261012101500'));
 });
+
+test('tarjeta recomendada para un gasto fijo: más días para pagar, sin pasar 30%, solo fijos en tarjeta', async () => {
+  const { recommendScheduleCards, changeScheduleAccount } = await import('../../js/engine/recommend.js');
+  const s = demoState();
+  // Suscripción el día 5 con la Tarjeta A (corte 4): justo después del corte → muchos días.
+  s.schedules.push({ id: 'stream', kind: 'fixed', name: 'Streaming', amount: 20000, account: 'tc', rule: { type: 'monthly', day: 5 } });
+  s.schedules.push({ id: 'renta', kind: 'fixed', name: 'Renta', amount: 500000, account: 'banco', rule: { type: 'monthly', day: 1 } });
+  const r = recommendScheduleCards(s, '2026-10-01', { ta: 0, tb: 0, tc: 0 });
+  const st = r.items.find((x) => x.schedule === 'stream');
+  assert.equal(st.best.card, 'ta');
+  assert.ok(st.move && st.best.days > st.current.days);
+  assert.ok(!r.items.some((x) => x.schedule === 'renta')); // débito no se toca
+  // Si la mejor ya pasa del 30%, no se recomienda.
+  const r2 = recommendScheduleCards(s, '2026-10-01', { ta: 900000, tb: 0, tc: 0 });
+  assert.notEqual(r2.items.find((x) => x.schedule === 'stream').best.card, 'ta');
+  // Cambiar de tarjeta desde el siguiente cargo: lo ya registrado se queda.
+  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 20000, date: '2026-10-05', planRef: 'stream@2026-10-05' }));
+  changeScheduleAccount(s, 'stream', 'ta', '2026-10-06', () => 'nuevo');
+  assert.equal(s.schedules.find((x) => x.id === 'stream').end, '2026-10-05');
+  const n = s.schedules.find((x) => x.id === 'nuevo');
+  assert.deepEqual([n.account, n.start], ['ta', '2026-11-01']);
+});
