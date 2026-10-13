@@ -107,6 +107,7 @@ await page.evaluate(() => {
   Object.defineProperty(Notification, 'permission', { get: () => 'granted', configurable: true });
   ServiceWorkerRegistration.prototype.showNotification = async function (title, opts) { window.__notified = [title, opts.body]; };
 });
+await page.click('.cap-more summary'); // en el navegador, lo que abre el navegador queda en "Otras formas"
 await page.click('[data-action="cap-test"]');
 await page.locator('#toast:not([hidden])').waitFor();
 assert.match(await page.locator('#toast').textContent(), /mandé la notificación de prueba/);
@@ -275,6 +276,70 @@ await page.reload();
 await page.locator('.hero-amount').waitFor();
 const marker = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--deploy').trim());
 assert.equal(marker, '"nueva"');
+
+// App de Android (puente simulado): anota lo que guardó el lector de notificaciones, sin abrir nada.
+const nctx = await browser.newContext({ viewport: { width: 360, height: 800 }, timezoneId: 'America/Mexico_City' });
+await nctx.addInitScript(([st]) => {
+  const T = new Date('2026-10-01T12:00:00-06:00').getTime();
+  const D = Date;
+  Date = class extends D { constructor(...a) { super(...(a.length ? a : [T])); } static now() { return T; } };
+  window.__acked = []; window.__shared = null; window.__apps = ['com.google.android.apps.walletnfcrel'];
+  window.__queue = [
+    { id: 'com.google.android.apps.walletnfcrel-3-1', pkg: 'com.google.android.apps.walletnfcrel', app: 'Google Wallet', title: 'OXXO', text: '$45.00 con Visa •••• 9999', when: T - 3600e3 },
+    { id: 'com.nu.production-8-2', pkg: 'com.nu.production', app: 'Nu', title: 'Compra', text: 'Compraste $45.00 en OXXO con tu tarjeta •••• 9999', when: T - 3500e3 },
+    { id: 'com.nu.production-9-3', pkg: 'com.nu.production', app: 'Nu', title: 'Abono', text: 'Recibiste $500.00', when: T - 3400e3 },
+  ];
+  window.FBAndroid = {
+    version: () => 1,
+    status: () => JSON.stringify({ version: 1, access: false, notify: true, battery: false, confirm: true }),
+    pending: () => JSON.stringify(window.__queue),
+    ack: (ids) => { window.__acked.push(...JSON.parse(ids)); window.__queue = window.__queue.filter((x) => !JSON.parse(ids).includes(x.id)); },
+    apps: () => JSON.stringify({ apps: [{ pkg: 'com.google.android.apps.walletnfcrel', label: 'Google Wallet', on: window.__apps.includes('com.google.android.apps.walletnfcrel'), installed: true, n: 3 }, { pkg: 'com.nu.production', label: 'Nu', on: window.__apps.includes('com.nu.production'), installed: true, n: 9 }] }),
+    allApps: () => '[]', setApps: (j) => { window.__apps = JSON.parse(j); },
+    openAccess() {}, openAppInfo() {}, askNotify() {}, askBattery() {}, setConfirm() {},
+    test: () => { window.__queue.push({ id: 'own-1', pkg: 'io.github.bassandres.financiabass', title: 'PRUEBA FinanciaBass', text: 'Compraste $1.00 en PRUEBA FINANCIABASS', when: Date.now() }); setTimeout(() => window.fbNative.pull(), 10); return 'ok'; },
+    shareFile: (n, t) => { window.__shared = [n, t.length]; return true; },
+    saveBackup: (n) => { window.__backup = n; return `Descargas/FinanciaBass/${n}`; },
+    clipboard: () => window.__clip || '', openUrl() {},
+  };
+  if (st && !sessionStorage.getItem('noseed')) localStorage.setItem('financiabass:v1', st);
+}, [JSON.stringify(state)]);
+const np = await nctx.newPage();
+np.on('pageerror', (e) => errors.push(`android: ${e.message}`));
+await np.goto(base);
+await np.locator('.hero-amount').waitFor();
+const ntx = await np.evaluate(() => window.fb.state.tx.filter((t) => t.amount === 4500));
+assert.equal(ntx.length, 1); // Wallet + banco = una sola compra
+assert.deepEqual(ntx[0].seenBy.sort(), ['bank', 'wallet']);
+assert.equal(ntx[0].date, '2026-10-01');
+assert.equal(await np.evaluate(() => window.__acked.length), 3);
+assert.equal(await np.evaluate(() => window.__queue.length), 0);
+// No sale el aviso de "instálala" dentro de la app.
+assert.equal(await np.locator('text=Instálala en tu celular').count(), 0);
+// Más → Captura automática: permisos, apps y prueba de punta a punta.
+await np.goto(`${base}#/mas`);
+await np.getByText('Acceso a notificaciones').waitFor();
+await np.click('[data-action="nat-app"][data-pkg="com.nu.production"]');
+assert.deepEqual(await np.evaluate(() => window.__apps.sort()), ['com.google.android.apps.walletnfcrel', 'com.nu.production']);
+await np.selectOption('[data-nat-acc="com.nu.production"]', 'tb');
+assert.equal(await np.evaluate(() => window.fb.state.settings.capture.pkgAccount['com.nu.production']), 'tb');
+await np.click('[data-action="nat-test"]');
+await np.waitForFunction(() => window.fb.state.settings.capture?.testOk?.via === 'android');
+// Respaldo: se comparte con el menú de Android; copia automática a Descargas.
+await np.click('[data-action="backup"]');
+assert.equal(await np.evaluate(() => window.__shared?.[0]), 'financiabass-respaldo-2026-10-01.txt');
+await np.waitForFunction(() => window.__backup === 'financiabass-respaldo-2026-10-01.txt');
+assert.ok(await np.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), 'scroll horizontal en Más (app)');
+// Pasar mis datos: en una app nueva (sin datos) se pegan desde el portapapeles.
+const envelope = await np.evaluate(() => JSON.stringify({ app: 'FinanciaBass', schema: 3, data: window.fb.state }));
+await np.evaluate(() => { localStorage.clear(); sessionStorage.clear(); sessionStorage.setItem('noseed', '1'); });
+await np.evaluate((t) => { window.__clip = t; }, envelope);
+await np.reload();
+await np.evaluate((t) => { window.__clip = t; }, envelope);
+await np.click('[data-wact="paste"]');
+await np.locator('.hero-amount').waitFor();
+assert.ok(await np.evaluate(() => window.fb.state.tx.some((t) => t.amount === 4500)));
+await nctx.close();
 
 assert.deepEqual(errors, []);
 await page.screenshot({ path: process.env.SHOT || '/tmp/financiabass-hoy.png', fullPage: true });

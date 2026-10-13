@@ -1,6 +1,7 @@
 // Pantallas. Cada función regresa HTML; los botones usan data-action y los maneja app.js.
 import { money, fmtDate, diffDays, describeRule } from '../engine/index.js';
 import { esc } from './dom.js';
+import { APK_URL, NATIVE_LATEST } from '../native.js';
 import { icon, badge, catMeta } from './icons.js';
 
 export const CATEGORIES = ['comida', 'transporte', 'antojos', 'escuela', 'salidas', 'salud', 'ropa', 'regalos', 'suscripciones', 'otros'];
@@ -138,7 +139,7 @@ export function hoyView(state, d) {
 // En iPhone, Safari borra los datos de un sitio que no se usa en 7 días; instalada en la pantalla de inicio no.
 function installNotice(state, d) {
   const env = d.env || {};
-  if (env.standalone || env.os === 'other' || state.dismissed['install']) return '';
+  if (env.native || env.standalone || env.os === 'other' || state.dismissed['install']) return '';
   const how = env.os === 'ios'
     ? 'En Safari toca <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. Así tus datos no se borran y se abre como app.'
     : `En ${esc(env.browser?.name || 'tu navegador')} toca <b>⋮</b> y luego <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>). Ábrela siempre desde ese mismo navegador: ahí viven tus datos.`;
@@ -425,10 +426,59 @@ function captureGroup(state, d) {
       <li>Cuando pagues, abre la app y toca <b>Pegar compra</b> en Hoy. iPhone te pedirá permiso para pegar.</li>
     </ol>
     <p class="foot">¿Pagas varias veces antes de abrir la app? Al inicio del texto pon la variable <b>Portapapeles</b> y un salto de línea: se van juntando y la app no repite las que ya registró. Con la tarjeta física, usa el + o pega la notificación del banco.</p>`;
+  const missing = missing4.length ? `<p class="foot">${icon('info', 14, 'inline')} Para saber con qué tarjeta pagaste, pon los <b>últimos 4 dígitos</b> de ${missing4.map((a) => esc(a.name)).join(', ')} en <button class="link" data-action="acc-list">Cuentas y tarjetas</button>.</p>` : '';
+  if (d.env?.native) return nativeCaptureGroup(state, d, missing);
+  // En el navegador de Android: la app de Android es lo recomendado; lo demás (abre el navegador) queda plegado.
+  const promo = `<div class="app-promo">
+    <p class="ol-title">${icon('phone', 18)} App de FinanciaBass para Android</p>
+    <p class="foot top0">Lee las notificaciones de Google Wallet y de tus bancos y <b>anota tus compras sola, sin abrir el navegador</b>. Es esta misma app con tus mismos datos.</p>
+    <ol class="steps">
+      <li>Primero toca <b>Copiar mis datos</b> (abajo).</li>
+      <li>Descarga la app y ábrela. Android te pedirá permiso para instalar apps desde ${esc(d.env?.browser?.name || 'tu navegador')}: <b>Permitir</b>. Si Play Protect avisa que no conoce la app, toca <b>Más detalles → Instalar de todos modos</b> (es de código abierto, en este mismo proyecto).</li>
+      <li>En la app toca <b>Pegar mis datos</b> y luego ve a <b>Más → Captura automática</b>.</li>
+    </ol>
+    <div class="pair wrap"><a class="btn sm" href="${APK_URL}" download="FinanciaBass.apk">${icon('download', 16)}Descargar app</a><button class="btn sm ghost" data-action="copy-data">${icon('copy', 16)}Copiar mis datos</button></div>
+  </div>`;
   return group('Captura automática', `<div class="panel pad">
     ${tabs}
-    <div class="cap-body">${os === 'ios' ? ios : android}</div>
-    ${missing4.length ? `<p class="foot">${icon('info', 14, 'inline')} Para saber con qué tarjeta pagaste, pon los <b>últimos 4 dígitos</b> de ${missing4.map((a) => esc(a.name)).join(', ')} en <button class="link" data-action="acc-list">Cuentas y tarjetas</button>.</p>` : ''}
+    <div class="cap-body">${os === 'ios' ? ios : `${promo}<details class="cap-more"><summary>Otras formas (abren el navegador)</summary>${android}</details>`}</div>
+    ${missing}
+    <p class="foot">Lo que parece transporte va a tu apartado de transporte. Lo demás queda en “Por revisar” para que le pongas categoría. Las compras rechazadas y los pagos que recibes se ignoran.</p>
+  </div>`);
+}
+
+// Dentro de la app de Android: permisos, apps que escucho, a qué tarjeta va cada app y la prueba.
+function nativeCaptureGroup(state, d, missing) {
+  const st = d.nat?.status || {};
+  const apps = d.nat?.apps || [];
+  const map = state.settings.capture?.pkgAccount || {};
+  const payAccs = state.accounts.filter((a) => !a.archived && a.type !== 'savings');
+  const ok = state.settings.capture?.testOk;
+  const row = (good, title, meta, btn) => `<div class="item"><span class="ic ${good ? 'hue-green' : 'hue-amber'}">${icon(good ? 'check' : 'alert', 18)}</span>
+    <span class="item-body"><span class="item-title">${title}</span>${meta ? `<span class="item-meta">${meta}</span>` : ''}</span>${good ? '' : btn}</div>`;
+  const appRows = apps.length ? apps.sort((a, b) => (b.on - a.on) || (b.n - a.n)).map((a) => `<div class="item">
+      <button type="button" class="ic ic-btn ${a.on ? 'hue-green' : 'hue-gray'}" data-action="nat-app" data-pkg="${esc(a.pkg)}" aria-label="${a.on ? 'Dejar de escuchar' : 'Escuchar'}">${icon(a.on ? 'check' : 'plus', 18)}</button>
+      <span class="item-body"><span class="item-title">${esc(a.label)}${a.on ? '' : ' <span class="tag">no la escucho</span>'}</span>
+      <span class="item-meta">${a.n ? `${a.n} notificaciones recientes` : a.installed ? 'Instalada' : 'No instalada'}</span></span>
+      ${a.on ? `<select class="mini" data-nat-acc="${esc(a.pkg)}" aria-label="Tarjeta"><option value="">Tarjeta: auto</option>${payAccs.map((x) => `<option value="${esc(x.id)}" ${map[a.pkg] === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>` : ''}
+    </div>`).join('') : '<div class="item"><span class="item-body"><span class="item-meta">Todavía no veo notificaciones de ninguna app. Toca “Elegir otras apps”.</span></span></div>';
+  return group('Captura automática', `<div class="panel pad">
+    ${(st.version || 0) < NATIVE_LATEST ? `<div class="notice warn">${icon('download')}<p><b>Hay una versión nueva de la app.</b> <a href="${APK_URL}">Descárgala</a> e instálala encima; tus datos se quedan.</p></div>` : ''}
+    <p class="foot top0">La app lee las notificaciones de las apps que marques, <b>anota las compras sola</b> y no abre nada. Tus datos no salen del celular.</p>
+    <div class="panel">
+      ${row(st.access, 'Acceso a notificaciones', st.access ? 'Activado' : 'Necesario para leer tus compras', '<button class="btn sm" data-action="nat-access">Dar acceso</button>')}
+      ${row(st.battery, 'Batería sin restricciones', st.battery ? 'Activado' : 'Para que Android no la apague', '<button class="btn sm ghost" data-action="nat-battery">Quitar</button>')}
+      ${row(st.notify || !st.confirm, 'Avisarme cuando detecte una compra', st.confirm ? (st.notify ? 'Un aviso silencioso con el monto' : 'Falta permitir notificaciones') : 'Apagado',
+        '<button class="btn sm ghost" data-action="nat-notify">Permitir</button>')}
+    </div>
+    ${st.access ? '' : `<p class="foot">Si Android dice <b>“Configuración restringida”</b>: <button class="link" data-action="nat-appinfo">abre la información de la app</button>, toca <b>⋮</b> (arriba a la derecha) → <b>Permitir configuración restringida</b>, y vuelve a tocar “Dar acceso”.</p>`}
+    <div class="pair wrap mt"><button class="btn sm ghost" data-action="nat-confirm" data-on="${st.confirm ? '1' : '0'}">${st.confirm ? 'No avisarme' : 'Avisarme'} de cada compra</button></div>
+    <p class="label">Apps que escucho</p>
+    <div class="panel">${appRows}</div>
+    <div class="pair wrap mt"><button class="btn sm ghost" data-action="nat-all">${icon('plus', 16)}Elegir otras apps</button><button class="btn sm" data-action="nat-test">${icon('bell', 16)}Probar ahora</button></div>
+    ${ok ? `<p class="foot">${icon('check', 14, 'inline')} Última prueba: <b>funcionó el ${fmtDate(ok.date)}</b>${ok.browser ? ` en ${esc(ok.browser)}` : ''}.</p>` : ''}
+    <p class="foot">Marca <b>Google Wallet</b> (avisa al instante al pagar con el celular) y la app de cada banco (compras en línea o con la tarjeta física). Si llegan las dos de la misma compra, la anoto una vez. “Tarjeta: auto” la detecta con los últimos 4 dígitos; si una app es de un solo banco con una sola tarjeta, elígela.</p>
+    ${missing}
     <p class="foot">Lo que parece transporte va a tu apartado de transporte. Lo demás queda en “Por revisar” para que le pongas categoría. Las compras rechazadas y los pagos que recibes se ignoran.</p>
   </div>`);
 }
@@ -474,12 +524,13 @@ export function masView(state, d) {
   </div>`)}
 
   ${group('Respaldo', `<div class="panel pad">
-    <p class="foot top0">Tus datos viven solo en este celular. Si borras los datos del navegador o desinstalas la app sin respaldo, se pierden. Último respaldo: <b>${st.lastBackupAt ? fmtDate(st.lastBackupAt) : 'nunca'}</b>.</p>
+    <p class="foot top0">Tus datos viven solo en este celular. Si borras los datos del navegador o desinstalas la app sin respaldo, se pierden.${d.env?.native ? ' La app de Android además guarda una copia cada vez que cambias algo en <b>Descargas/FinanciaBass</b> (las últimas 7).' : ''} Último respaldo: <b>${st.lastBackupAt ? fmtDate(st.lastBackupAt) : 'nunca'}</b>.</p>
     <div class="pair wrap">
       <button class="btn sm" data-action="backup">${icon('download', 16)}Respaldar</button>
       <button class="btn sm ghost" data-action="import">${icon('upload', 16)}Restaurar</button>
       <button class="btn sm ghost" data-action="config">${icon('code', 16)}Código FB1</button>
       <button class="btn sm ghost" data-action="auto-backups">${icon('clock', 16)}Copias automáticas</button>
+      ${d.env?.native ? '' : `<button class="btn sm ghost" data-action="copy-data">${icon('copy', 16)}Copiar mis datos</button>`}
     </div>
     <input type="file" id="import-file" accept=".txt,.json,application/json,text/plain" hidden>
   </div>`)}

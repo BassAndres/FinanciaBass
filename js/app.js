@@ -3,12 +3,13 @@ import {
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
   parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl, isCaptureTest, fromBrowserPkg, TEST_TEXT,
-  recommendScheduleCards, changeScheduleAccount,
+  recommendScheduleCards, changeScheduleAccount, nativeCapture,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo } from './ui/dom.js';
 import { hoyView, movsView, tarjetasView, planView, masView, entrySheet, billGroups, partReason } from './ui/views.js';
 import { renderWizard, clearWizard } from './ui/wizard.js';
+import { isNative, native } from './native.js';
 import { icon } from './ui/icons.js';
 import {
   initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
@@ -35,9 +36,18 @@ function commit(fn, msg, undoable = false) {
   const before = JSON.stringify(state);
   fn(state);
   if (!store.save(state)) toast('No pude guardar: tu celular no tiene espacio. Haz un respaldo y borra datos de otras apps.');
+  scheduleAutoBackup();
   render();
   if (typeof msg === 'function') msg = msg();
   if (msg) toast(msg, undoable ? { label: 'Deshacer', fn: () => { state = JSON.parse(before); store.save(state); render(); } } : null);
+}
+
+// App de Android: copia de tus datos en Descargas/FinanciaBass (sobrevive aunque desinstales la app).
+let backupTimer = null;
+function scheduleAutoBackup() {
+  if (!isNative() || !state) return;
+  clearTimeout(backupTimer);
+  backupTimer = setTimeout(() => { if (state) native.saveBackup(`financiabass-respaldo-${today()}.txt`, store.exportEnvelope(state)); }, 1500);
 }
 
 // Guarda un movimiento. Si corresponde a algo planeado (una suscripción, el dinero que te dan cada semana…) lo liga para no contarlo doble.
@@ -78,11 +88,14 @@ window.addEventListener('appinstalled', () => { installEvent = null; if (state) 
 // ---------- render ----------
 const ROUTES = { hoy: hoyView, movs: movsView, tarjetas: tarjetasView, plan: planView, mas: masView };
 
+const route = () => (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';
+
 function render() {
   document.body.classList.toggle('no-state', !state);
   if (!state) {
     renderWizard(main, {
       today, token: uid, toast, applyCode: applyConfigCode, loadError: store.loadError, stray, browser: browserInfo().name,
+      native: isNative(), pasteData,
       finish: (s) => replaceState(s, '¡Listo! Este es tu número de hoy'),
     });
     return;
@@ -101,10 +114,11 @@ function render() {
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt(t);
   dash.recs = recommendScheduleCards(state, t, dash.balances);
-  dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent, browser: browserInfo() };
-  const route = (location.hash.match(/^#\/(\w+)/) || [])[1] || 'hoy';
-  main.innerHTML = (ROUTES[route] || hoyView)(state, dash);
-  document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === `#/${route}`));
+  dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent, browser: browserInfo(), native: isNative() };
+  if (dash.env.native && route() === 'mas') dash.nat = { status: native.status(), apps: native.apps() };
+  const r = route();
+  main.innerHTML = (ROUTES[r] || hoyView)(state, dash);
+  document.querySelectorAll('nav a').forEach((a) => a.classList.toggle('on', a.getAttribute('href') === `#/${r}`));
   if ('setAppBadge' in navigator) {
     const n = dash.payPlan.filter((p) => p.date <= addDays(t, 3)).length + dash.prompts.length;
     (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
@@ -248,6 +262,7 @@ function editTx(id) {
 
 // ---------- archivos ----------
 async function shareOrDownload(filename, text, mime) {
+  if (isNative()) return native.shareFile(filename, text, mime);
   const file = new File([text], filename, { type: mime });
   if (navigator.canShare?.({ files: [file] })) {
     try { await navigator.share({ files: [file], title: filename }); return true; } catch (e) { if (e.name === 'AbortError') return false; }
@@ -258,6 +273,23 @@ async function shareOrDownload(filename, text, mime) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
   return true;
+}
+
+// "Pegar mis datos": lo que copiaste con "Copiar mis datos" en el navegador (para pasarte a la app de Android).
+async function pasteData() {
+  let text = isNative() ? native.clipboard() : null;
+  if (text == null) { try { text = await navigator.clipboard.readText(); } catch { text = null; } }
+  const go = (t) => {
+    try {
+      const data = store.importEnvelope(t);
+      if (state && !confirm('Esto reemplaza tus datos actuales. ¿Continuar?')) return;
+      replaceState(data, '¡Listo! Tus datos ya están en la app');
+    } catch { toast('Lo que copiaste no son datos de FinanciaBass. En el navegador usa Más → Respaldo → Copiar mis datos'); }
+  };
+  if (text && text.trim()) return go(text);
+  openSheet(`<h2>Pegar mis datos</h2><p class="foot top0">Mantén presionado el cuadro y elige <b>Pegar</b>.</p><textarea id="data-box" rows="6"></textarea><button type="button" class="btn wide lg" data-sheet-action="go">Cargar</button>`, (body) => {
+    body.onclick = (e) => { if (e.target.closest('[data-sheet-action]')) { const v = $('#data-box', body).value; closeSheet(); go(v); } };
+  });
 }
 
 function replaceState(next, msg) {
@@ -299,6 +331,46 @@ const actions = {
       await reg.showNotification('PRUEBA FinanciaBass', { body: TEST_TEXT, tag: `fb-test-${Date.now()}`, icon: './icons/icon-192.png' });
       toast('Listo: mandé la notificación de prueba. Si Automate la ve, se abre la app y dice “¡Funciona!”');
     } catch { toast('No pude mandar la notificación de prueba'); }
+  },
+  // ---- app de Android ----
+  'nat-access': () => native.openAccess(),
+  'nat-appinfo': () => native.openAppInfo(),
+  'nat-notify': () => native.askNotify(),
+  'nat-battery': () => native.askBattery(),
+  'nat-confirm'(el) { native.setConfirm(el.dataset.on !== '1'); render(); },
+  'nat-app'(el) {
+    const on = new Set(native.apps().filter((a) => a.on).map((a) => a.pkg));
+    if (on.has(el.dataset.pkg)) on.delete(el.dataset.pkg); else on.add(el.dataset.pkg);
+    native.setApps([...on]);
+    render();
+  },
+  'nat-all'() {
+    const on = new Set(native.apps().filter((a) => a.on).map((a) => a.pkg));
+    const all = native.allApps().sort((a, b) => a.label.localeCompare(b.label, 'es'));
+    const rows = (q) => all.filter((a) => !q || `${a.label} ${a.pkg}`.toLowerCase().includes(q.toLowerCase()))
+      .map((a) => `<button type="button" class="item" data-pkg="${esc(a.pkg)}"><span class="ic ${on.has(a.pkg) ? 'hue-green' : 'hue-gray'}">${icon(on.has(a.pkg) ? 'check' : 'bell', 18)}</span><span class="item-body"><span class="item-title">${esc(a.label)}</span><span class="item-meta">${esc(a.pkg)}</span></span></button>`).join('');
+    openSheet(`<h2>¿Qué apps escucho?</h2><p class="foot top0">Marca Google Wallet y las apps de tus bancos. Solo leo las notificaciones de las que marques.</p>
+      <input class="field" type="search" placeholder="Buscar (ej. Nu, Banamex)" data-q><div class="panel mt" data-list>${rows('')}</div>`, (body) => {
+      body.oninput = (e) => { if (e.target.dataset.q != null) body.querySelector('[data-list]').innerHTML = rows(e.target.value); };
+      body.onclick = (e) => {
+        const b = e.target.closest('[data-pkg]');
+        if (!b) return;
+        if (on.has(b.dataset.pkg)) on.delete(b.dataset.pkg); else on.add(b.dataset.pkg);
+        native.setApps([...on]);
+        body.querySelector('[data-list]').innerHTML = rows(body.querySelector('[data-q]').value);
+        render();
+      };
+    });
+  },
+  'nat-test'() {
+    const r = native.test();
+    if (r === 'access') return toast('Primero da acceso a las notificaciones (botón de arriba)');
+    if (r === 'notify') { native.askNotify(); return toast('Permite que FinanciaBass muestre notificaciones y vuelve a probar'); }
+    if (r === 'ok') toast('Mandé una notificación de prueba. Si todo está bien, en un momento dice “¡Funciona!”');
+  },
+  async 'copy-data'() {
+    try { await navigator.clipboard.writeText(store.exportEnvelope(state)); toast('Copié todos tus datos. Abre la app de Android y toca “Pegar mis datos”'); }
+    catch { toast('No pude copiar. Usa “Respaldar” y luego “Restaurar” en la app'); }
   },
   'cap-app': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), app: el.dataset.app }; }),
   dismiss: (el) => commit((s) => { s.dismissed[el.dataset.key] = true; }),
@@ -416,6 +488,14 @@ document.addEventListener('change', async (e) => {
     } catch { toast('Ese archivo no es un respaldo válido'); }
     el.value = '';
   }
+  if (el.dataset.natAcc) {
+    commit((s) => {
+      const m = { ...(s.settings.capture?.pkgAccount || {}) };
+      if (el.value) m[el.dataset.natAcc] = el.value; else delete m[el.dataset.natAcc];
+      s.settings.capture = { ...(s.settings.capture || {}), pkgAccount: m };
+    }, 'Listo');
+    return;
+  }
   const path = el.dataset.setting;
   if (path) {
     commit((s) => {
@@ -428,7 +508,7 @@ document.addEventListener('change', async (e) => {
 });
 
 window.addEventListener('hashchange', () => { closeSheet(); render(); window.scrollTo(0, 0); });
-document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refresh(); render(); } });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { refresh(); render(); pullNative(); } });
 // Otra pestaña guardó algo: lo tomo para no pisarlo.
 window.addEventListener('storage', (e) => { if (e.key === store.KEY) { refresh(); if (!document.querySelector('#sheet:not([hidden])')) render(); } });
 
@@ -487,19 +567,46 @@ function handleIntents() {
 
 // Guarda una compra capturada (notificación, Wallet, atajo de iPhone). Evita duplicados entre fuentes:
 // la misma compra puede llegar de Google Wallet y luego del banco, o ya la habías registrado a mano.
-function captureTx(tx, via, extId, quiet = false) {
+function captureTx(tx, via, extId, quiet = false, ts = Date.now()) {
   if (extId && state.processedExtIds.includes(extId)) { if (!quiet) toast('Eso ya estaba registrado'); return 'seen'; }
-  const dup = findCaptureDuplicate(state.tx, tx, via);
+  const dup = findCaptureDuplicate(state.tx, tx, via, ts);
   commit((s) => {
     if (dup) {
       const x = s.tx.find((t) => t.id === dup.id);
       x.seenBy = [...(x.seenBy || []), via];
       if (!x.account && tx.account) x.account = tx.account;
-    } else addTx(s, { ...tx, via, seenBy: [via] });
+    } else addTx(s, { ...tx, via, seenBy: [via], ts });
     if (extId) s.processedExtIds = [...s.processedExtIds, extId].slice(-500);
   }, quiet ? null : () => dup ? `Ya lo tenía: ${money(tx.amount)} ${dup.desc || ''}` : `Registrado: ${money(tx.amount)} ${tx.desc || ''}`, !dup);
   return dup ? 'dup' : 'new';
 }
+
+// App de Android: anota las compras que el lector de notificaciones guardó mientras la app estaba cerrada.
+function pullNative() {
+  if (!state || !isNative()) return;
+  const list = native.pending();
+  if (!list.length) return;
+  const ids = [];
+  let added = 0, dups = 0, test = false;
+  for (const item of list) {
+    ids.push(item.id);
+    const c = nativeCapture(item, state);
+    if (c.test) { test = true; continue; }
+    if (c.ignore) continue;
+    c.tx.account ||= (c.tx.cat === 'transporte' ? liveAcc(state.settings.transport?.account) : null) || defaultAccount('expense');
+    if (!c.tx.account) continue;
+    const r = captureTx(c.tx, c.via, c.extId, true, c.ts);
+    if (r === 'new') added++; else if (r === 'dup') dups++;
+  }
+  native.ack(ids);
+  if (test) {
+    commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), testOk: { date: today(), via: 'android', browser: 'la app de Android' } }; },
+      '¡Funciona! La app leyó la notificación de prueba sin abrir nada.');
+  } else if (added || dups) {
+    toast(added ? `${added === 1 ? 'Anoté 1 compra' : `Anoté ${added} compras`}${dups ? ` (${dups} ya estaba${dups > 1 ? 'n' : ''})` : ''}. Revísalas en Hoy.` : 'Esas compras ya estaban anotadas');
+  }
+}
+window.fbNative = { pull() { refresh(); render(); pullNative(); } };
 
 // iPhone: el atajo de Wallet copia "FB|monto|comercio|tarjeta|fecha" al portapapeles. Aquí se pega.
 async function pasteCapture(text) {
@@ -539,6 +646,8 @@ document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(e
 $('#fab').onclick = () => (state ? openEntry({}) : null);
 render();
 handleIntents();
+pullNative();
+scheduleAutoBackup();
 
 if ('serviceWorker' in navigator) {
   // Si llega una versión nueva de la app, se recarga una sola vez para mostrarla.

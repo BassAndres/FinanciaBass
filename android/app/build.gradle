@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'io.github.bassandres.financiabass'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'io.github.bassandres.financiabass'
+        minSdk 26
+        targetSdk 35
+        versionCode 1
+        versionName '1.0'
+    }
+
+    // La llave de firma NUNCA se sube al repo: se pasa por variables de entorno al compilar.
+    signingConfigs {
+        release {
+            def ks = System.getenv('FB_KEYSTORE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('FB_KEYSTORE_PASS')
+                keyAlias 'financiabass'
+                keyPassword System.getenv('FB_KEYSTORE_PASS')
+                storeType 'pkcs12'
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+}

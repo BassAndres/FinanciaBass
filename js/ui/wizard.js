@@ -67,6 +67,8 @@ function stepHtml(today) {
       </div>
       <div class="panel pad">
         <h2>¿Ya la usabas?</h2>
+        <button type="button" class="btn ${ctx.native ? '' : 'ghost'} wide" data-wact="paste">${icon('paste', 18)}Pegar mis datos</button>
+        <p class="foot">${ctx.native ? 'Si la usabas en el navegador: allá ve a Más → Respaldo → <b>Copiar mis datos</b> y luego toca aquí.' : 'Si copiaste tus datos con “Copiar mis datos”.'}</p>
         <button type="button" class="btn ghost wide" data-wact="import">${icon('upload', 18)}Restaurar un respaldo</button>
         <details class="wcode"><summary>Tengo un código FB1</summary>
           <textarea id="config-code" rows="3" placeholder="FB1…"></textarea>
@@ -242,6 +244,7 @@ function bind(main) {
     if (del) w[del.dataset.wdel].splice(Number(del.dataset.i), 1);
     if (add || sug || del) return rerender();
     const act = t.closest('[data-wact]')?.dataset.wact;
+    if (act === 'paste') ctx.pasteData();
     if (act === 'import') $('#import-file').click();
     if (act === 'code') ctx.applyCode($('#config-code').value);
   };

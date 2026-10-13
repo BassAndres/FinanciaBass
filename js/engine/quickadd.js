@@ -123,6 +123,31 @@ export const isCaptureTest = (text) => /PRUEBA FINANCIABASS/i.test(String(text |
 export const BROWSER_PKGS = ['com.brave.browser', 'com.android.chrome', 'com.sec.android.app.sbrowser', 'com.microsoft.emmx', 'com.opera.browser', 'org.mozilla.firefox'];
 export const fromBrowserPkg = (extId) => BROWSER_PKGS.some((p) => String(extId || '').startsWith(`${p}-`));
 
+// Apps de cartera (pago con el celular): su aviso llega al instante. Lo demás se toma como aviso del banco.
+export const WALLET_PKGS = ['com.google.android.apps.walletnfcrel', 'com.samsung.android.spay', 'com.samsung.android.samsungpay.gear'];
+
+// Una notificación que guardó la app de Android ({id, pkg, app, title, text, when}) → movimiento por anotar.
+// La cuenta se busca por los últimos 4 dígitos, luego por la cuenta que elegiste para esa app, y luego por nombre.
+export function nativeCapture(item, state) {
+  const title = item.title || '', text = item.text || '';
+  if (isCaptureTest(text) || isCaptureTest(title)) return { test: true, extId: item.id };
+  const n = parseNotification(text, { title });
+  if (n.ignore) return { ignore: n.ignore, extId: item.id };
+  const { accounts, settings } = state;
+  const live = (id) => (id && accounts.some((a) => a.id === id && !a.archived && a.type !== 'savings') ? id : null);
+  const account = (n.last4 && resolveAccount(accounts, { last4: n.last4 }))
+    || live(settings.capture?.pkgAccount?.[item.pkg])
+    || resolveAccount(accounts, { text: `${title} ${text}`, sources: settings.quickAdd?.sources })
+    || resolveAccount(accounts, { text: item.app || '' }) || null;
+  const when = Number(item.when) || Date.now();
+  const d = new Date(when);
+  const date = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return {
+    via: WALLET_PKGS.includes(item.pkg) ? 'wallet' : 'bank', extId: item.id, ts: when,
+    tx: { type: 'expense', amount: n.amount, desc: n.merchant, cat: n.cat || 'otros', account, date, src: 'capture', review: !n.cat || !account },
+  };
+}
+
 // Convierte los parámetros de la URL en un borrador de movimiento. No toca el estado.
 export function parseIntent(params, settings) {
   const get = (k) => (params.get(k) ?? '').trim();

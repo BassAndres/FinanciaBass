@@ -184,3 +184,19 @@ test('tarjeta recomendada para un gasto fijo: más días para pagar, sin pasar 3
   const n = s.schedules.find((x) => x.id === 'nuevo');
   assert.deepEqual([n.account, n.start], ['ta', '2026-11-01']);
 });
+
+test('app de Android: notificación guardada → compra (cuenta por 4 dígitos, por app o por nombre; fecha del aviso)', async () => {
+  const { nativeCapture } = await import('../../js/engine/quickadd.js');
+  const s = demoState();
+  s.accounts.find((a) => a.id === 'tb').last4 = '7167';
+  const when = new Date(2026, 9, 12, 23, 30).getTime(); // 12-oct, 11:30 pm (hora local)
+  const w = nativeCapture({ id: 'com.google.android.apps.walletnfcrel-5-1', pkg: 'com.google.android.apps.walletnfcrel', app: 'Google Wallet', title: 'OXXO', text: '$45.00 con Nu •••• 7167', when }, s);
+  assert.deepEqual([w.via, w.tx.account, w.tx.amount, w.tx.desc, w.tx.date, w.ts], ['wallet', 'tb', 4500, 'OXXO', '2026-10-12', when]);
+  s.settings.capture = { pkgAccount: { 'com.nu.production': 'ta' } };
+  const b = nativeCapture({ id: 'nu-1', pkg: 'com.nu.production', app: 'Nu', title: 'Compra aprobada', text: 'Compraste $120.00 en CINEMEX', when }, s);
+  assert.deepEqual([b.via, b.tx.account, b.tx.review], ['bank', 'ta', true]);
+  assert.ok(nativeCapture({ id: 'x', pkg: 'p', title: '', text: 'Recibiste $500.00 de Juan', when }, s).ignore);
+  assert.ok(nativeCapture({ id: 't', pkg: 'io.github.bassandres.financiabass', title: 'PRUEBA FinanciaBass', text: 'Compraste $1.00 en PRUEBA FINANCIABASS', when }, s).test);
+  const none = nativeCapture({ id: 'y', pkg: 'otra', app: 'Otra', title: 'Compra', text: '$10.00 en Tienda', when }, s);
+  assert.equal(none.tx.account, null);
+});

@@ -35,6 +35,26 @@ Una compra con tarjeta cuenta como gasto el día que la haces, y pagar la tarjet
 - **Respaldo:** en la pantalla inicial toca *Restaurar un respaldo*.
 - **Código de configuración** `FB1.…`: también se acepta en la pantalla inicial o como link `https://…/FinanciaBass/#setup=FB1.…`.
 
+## App de Android
+
+`android/` es una app mínima en Java (unos 150 KB). Es la misma app web dentro de un WebView, con tus datos guardados en el celular, más un `NotificationListenerService`:
+
+- Lee las notificaciones de Google Wallet y de las apps de banco que elijas, y las guarda en una cola local.
+- La página las anota la siguiente vez que abres la app, con `window.FBAndroid.pending()` y `ack()`. **No abre el navegador** ni manda nada a internet.
+- La interfaz se actualiza sola, porque carga `https://bassandres.github.io/FinanciaBass/`.
+- Cada cambio deja una copia en `Descargas/FinanciaBass`, que sobrevive aunque desinstales la app.
+- El APK firmado está en `descargas/FinanciaBass.apk`. Para pasar tus datos, en el navegador usa *Copiar mis datos* y en la app *Pegar mis datos*.
+
+Para compilar (JDK 17+, Gradle 8.13+ y el SDK con `platforms;android-35` y `build-tools;35.0.0`):
+
+```
+cd android
+echo "sdk.dir=/ruta/al/android-sdk" > local.properties
+FB_KEYSTORE=/ruta/financiabass-firma.p12 FB_KEYSTORE_PASS=… gradle assembleRelease
+```
+
+La llave de firma **no** está en el repo. Para que una versión nueva se instale encima de la anterior hay que firmarla con la misma llave.
+
 ## Captura automática
 
 Las instrucciones paso a paso, con tu dirección personal (incluye un token), están en *Más → Captura automática*.
