@@ -137,7 +137,7 @@ export function accountSheet(a) {
 export function schedulesList() {
   listSheet('Ingresos y gastos fijos', 'Sueldo, beca, suscripciones, MSI, ahorro… Toca uno para cambiar monto, día o tarjeta.',
     ctx.state.schedules.map((s) => ({
-      lead: `<span class="ic hue-${s.kind === 'income' ? 'green' : s.kind === 'savings' ? 'green' : 'gray'}">${icon(s.kind === 'income' ? 'income' : s.kind === 'savings' ? 'savings' : s.kind === 'msi' ? 'msi' : 'pin', 18)}</span>`,
+      lead: `<span class="ic hue-${s.kind === 'income' ? 'green' : s.kind === 'savings' ? 'green' : 'gray'}">${icon(s.kind === 'income' ? 'income' : s.kind === 'savings' ? 'savings' : s.kind === 'msi' ? 'msi' : 'repeat', 18)}</span>`,
       title: s.name, meta: `${money(s.amount)} · ${describeRule(s.rule)}`, open: () => scheduleSheet(s),
     })), 'Agregar ingreso o gasto fijo', () => scheduleSheet(null));
 }

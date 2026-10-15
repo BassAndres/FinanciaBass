@@ -137,14 +137,19 @@ export function hoyView(state, d) {
 }
 
 // En iPhone, Safari borra los datos de un sitio que no se usa en 7 días; instalada en la pantalla de inicio no.
+// Pero la app instalada guarda sus datos aparte de Safari y empieza vacía: hay que pasarlos con Copiar/Pegar.
 function installNotice(state, d) {
   const env = d.env || {};
   if (env.native || env.standalone || env.os === 'other' || state.dismissed['install']) return '';
   const how = env.os === 'ios'
-    ? 'En Safari toca <b>Compartir</b> y luego <b>Agregar a pantalla de inicio</b>. Así tus datos no se borran y se abre como app.'
+    ? `${iosAddSteps(env)} Safari borra los datos de una página que no abres en 7 días; desde el ícono no.
+      <br><b>La app del ícono empieza vacía</b> (iPhone guarda sus datos aparte): toca <b>Copiar mis datos</b>, ábrela desde el ícono y toca <b>Pegar mis datos</b>.`
     : `En ${esc(env.browser?.name || 'tu navegador')} toca <b>⋮</b> y luego <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>). Ábrela siempre desde ese mismo navegador: ahí viven tus datos.`;
-  return `<div class="notice">${icon('phone')}<p><b>Instálala en tu celular.</b> ${how}</p><div class="notice-actions">${env.canInstall ? '<button class="btn sm" data-action="install">Instalar</button>' : ''}<button class="btn sm ghost" data-action="dismiss" data-key="install">Ya entendí</button></div></div>`;
+  return `<div class="notice">${icon('phone')}<p><b>Instálala en tu celular.</b> ${how}</p><div class="notice-actions">${env.canInstall ? '<button class="btn sm" data-action="install">Instalar</button>' : ''}${env.os === 'ios' ? `<button class="btn sm" data-action="copy-data">${icon('copy', 16)}Copiar mis datos</button>` : ''}<button class="btn sm ghost" data-action="dismiss" data-key="install">Ya entendí</button></div></div>`;
 }
+
+// Cómo agregarla a la pantalla de inicio en iPhone (Safari; desde iOS 16.4 también Chrome, Edge o Firefox).
+export const iosAddSteps = (env = {}) => `En ${env.browser?.name && env.browser.name !== 'Safari' && env.browser.name !== 'tu navegador' ? esc(env.browser.name) : 'Safari'} toca <b>Compartir</b> (el cuadro con la flecha; en iOS 26 está dentro de <b>⋯</b>), luego <b>Agregar a pantalla de inicio</b> (si aparece <b>Abrir como app web</b>, déjalo activado) y toca <b>Agregar</b>.`;
 
 function yesterdayStat(d) {
   const y = (d.history || [])[1];
@@ -415,7 +420,7 @@ function captureGroup(state, d) {
   const ios = `
     <p class="foot top0"><b>Con Apple Pay, al instante:</b> el iPhone avisa a la app Atajos en cuanto se confirma el pago en Wallet. iPhone no deja que una app web se abra sola, así que el atajo copia la compra y tú la pegas con un toque.</p>
     <ol class="steps">
-      ${d.env?.standalone ? '' : '<li>Primero agrégala a tu pantalla de inicio: en Safari, <b>Compartir → Agregar a pantalla de inicio</b>.</li>'}
+      ${d.env?.standalone ? '' : `<li>Primero agrégala a tu pantalla de inicio. ${iosAddSteps(d.env)}</li>`}
       <li>Abre <b>Atajos → Automatización → Nueva automatización → Transacción</b>. Elige tus tarjetas y marca <b>Ejecutar inmediatamente</b>.</li>
       <li>Agrega la acción <b>Texto</b> y escribe esto, cambiando cada [ ] por la variable del mismo nombre (tócala en la barra de variables):</li>
     </ol>
@@ -425,7 +430,7 @@ function captureGroup(state, d) {
       <li>Opcional: <b>Mostrar notificación</b> con el texto “Abre FinanciaBass y toca Pegar”.</li>
       <li>Cuando pagues, abre la app y toca <b>Pegar compra</b> en Hoy. iPhone te pedirá permiso para pegar.</li>
     </ol>
-    <p class="foot">¿Pagas varias veces antes de abrir la app? Al inicio del texto pon la variable <b>Portapapeles</b> y un salto de línea: se van juntando y la app no repite las que ya registró. Con la tarjeta física, usa el + o pega la notificación del banco.</p>`;
+    <p class="foot">¿Pagas varias veces antes de abrir la app? Al inicio del texto pon la variable <b>Portapapeles</b> y un salto de línea: se van juntando y la app no repite las que ya registró. Cada compra queda en el día en que pagaste, aunque la pegues después. Con la tarjeta física, usa el + o copia y pega la notificación del banco.</p>`;
   const missing = missing4.length ? `<p class="foot">${icon('info', 14, 'inline')} Para saber con qué tarjeta pagaste, pon los <b>últimos 4 dígitos</b> de ${missing4.map((a) => esc(a.name)).join(', ')} en <button class="link" data-action="acc-list">Cuentas y tarjetas</button>.</p>` : '';
   if (d.env?.native) return nativeCaptureGroup(state, d, missing);
   // En el navegador de Android: la app de Android es lo recomendado; lo demás (abre el navegador) queda plegado.
@@ -562,7 +567,7 @@ export function entrySheet(state, draft, candidates = []) {
   ${draft.type === 'pay' || draft.type === 'transfer' ? `<p class="label">${draft.type === 'pay' ? 'Tarjeta' : 'Hacia'}</p>${chips(toList.filter((a) => a.id !== draft.account), 'to', draft.to)}` : ''}
   ${candidates.length ? `<p class="label">¿Es algo que ya tenías planeado?</p><div class="chips">
     <button type="button" class="chip ${!draft.planRef || draft.planRef === 'none' ? 'on' : ''}" data-pick="planRef" data-val="none">No, es otro ${draft.type === 'income' ? 'ingreso' : 'gasto'}</button>
-    ${candidates.map((i) => `<button type="button" class="chip ${draft.planRef === i.id ? 'on' : ''}" data-pick="planRef" data-val="${esc(i.id)}">${icon(i.kind === 'income' ? 'income' : 'pin', 16)}${esc(i.name)} · ${money(i.amount, { decimals: false })} · ${fmtDate(i.date, false)}</button>`).join('')}
+    ${candidates.map((i) => `<button type="button" class="chip ${draft.planRef === i.id ? 'on' : ''}" data-pick="planRef" data-val="${esc(i.id)}">${icon(i.kind === 'income' ? 'income' : 'repeat', 16)}${esc(i.name)} · ${money(i.amount, { decimals: false })} · ${fmtDate(i.date, false)}</button>`).join('')}
   </div>` : ''}
   ${draft.type === 'expense' ? `<p class="label">Categoría</p><div class="chips">${CATEGORIES.map((k) => `<button type="button" class="chip ${draft.cat === k ? 'on' : ''}" data-pick="cat" data-val="${k}">${icon(catMeta(k).icon, 16)}${catMeta(k).label}</button>`).join('')}</div>` : ''}
   ${draft.type === 'income' ? `<p class="label">¿De quién?</p><div class="chips">${['Amigo', 'Mamá', 'Papá', 'Familia', 'Venta', 'Otro'].map((w) => `<button type="button" class="chip ${draft.desc === w ? 'on' : ''}" data-pick="desc" data-val="${w}">${w}</button>`).join('')}</div>` : ''}
