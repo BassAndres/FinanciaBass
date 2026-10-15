@@ -1,9 +1,9 @@
 import {
-  computeDashboard, autoPostDue, instanceToTx, periodFor, addDays, localToday,
+  computeDashboard, autoPostDue, instanceToTx, addDays, localToday,
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
   parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl, isCaptureTest, fromBrowserPkg, TEST_TEXT,
-  recommendScheduleCards, changeScheduleAccount, nativeCapture,
+  recommendScheduleCards, changeScheduleAccount, nativeCapture, periodLeftover,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo } from './ui/dom.js';
@@ -95,7 +95,7 @@ function render() {
   if (!state) {
     renderWizard(main, {
       today, token: uid, toast, applyCode: applyConfigCode, loadError: store.loadError, stray, browser: browserInfo().name,
-      native: isNative(), pasteData,
+      native: isNative(), pasteData, iosBrowser: platform() === 'ios' && !isStandalone(),
       finish: (s) => replaceState(s, '¡Listo! Este es tu número de hoy'),
     });
     return;
@@ -112,7 +112,7 @@ function render() {
   dash.history = dayHistory(state, t, 7);
   dash.outlook = monthOutlook(state, t);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
-  dash.leftover = leftoverPrompt(t);
+  dash.leftover = leftoverPrompt();
   dash.recs = recommendScheduleCards(state, t, dash.balances);
   dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent, browser: browserInfo(), native: isNative() };
   if (dash.env.native && route() === 'mas') dash.nat = { status: native.status(), apps: native.apps() };
@@ -125,14 +125,10 @@ function render() {
   }
 }
 
-function leftoverPrompt(t) {
-  const P = dash.period;
-  if (P.first || dash.k > 7) return null;
-  const prev = periodFor(state.settings, addDays(P.s, -1));
-  const key = `leftover:${prev.s}`;
-  if (state.dismissed[key] || !firstOf('savings')) return null;
-  const amount = computeDashboard(state, prev.e).R;
-  return amount > 0 ? { amount, date: prev.e, key } : null;
+function leftoverPrompt() {
+  if (dash.period.first || dash.k > 7 || !firstOf('savings')) return null;
+  const l = periodLeftover(state, dash.period);
+  return l && !state.dismissed[l.key] ? l : null;
 }
 
 // ---------- hoja de registro ----------
@@ -208,7 +204,7 @@ function saveEntry() {
   else if (draft.type === 'income') tx = { ...base, type: 'income', account: draft.account, amount, cat: 'ingreso' };
   else if (draft.type === 'pay' || draft.type === 'transfer') {
     if (!liveAcc(draft.to) || draft.to === draft.account) return toast('Elige a dónde va');
-    tx = { ...base, type: 'transfer', account: draft.account, to: draft.to, amount, cat: draft.type === 'pay' ? 'pago' : 'mover', desc: base.desc || (draft.type === 'pay' ? 'Pago de tarjeta' : '') };
+    tx = { ...base, type: 'transfer', account: draft.account, to: draft.to, amount, cat: draft.type === 'pay' ? 'pago' : draft.cat === 'ahorro' ? 'ahorro' : 'mover', desc: base.desc || (draft.type === 'pay' ? 'Pago de tarjeta' : '') };
   } else {
     const real = parseAmount(draft.amountText) ?? 0;
     const current = balancesAt({ ...state, tx: state.tx.filter((t) => t.id !== draft.id) }, base.date)[draft.account] || 0;
@@ -229,6 +225,7 @@ function saveEntry() {
     s.settings.lastAccount = { ...(s.settings.lastAccount || {}), [draft.type]: draft.account };
     if (editing) {
       const i = s.tx.findIndex((t) => t.id === editing);
+      if (i < 0) return;
       s.tx[i] = { ...s.tx[i], ...tx, review: false };
       if (draft.planRef === 'none' || !draft.planRef) delete s.tx[i].planRef;
     } else {
@@ -369,7 +366,8 @@ const actions = {
     if (r === 'ok') toast('Mandé una notificación de prueba. Si todo está bien, en un momento dice “¡Funciona!”');
   },
   async 'copy-data'() {
-    try { await navigator.clipboard.writeText(store.exportEnvelope(state)); toast('Copié todos tus datos. Abre la app de Android y toca “Pegar mis datos”'); }
+    const where = platform() === 'ios' ? 'Abre FinanciaBass desde el ícono de tu pantalla de inicio' : 'Abre la app de Android';
+    try { await navigator.clipboard.writeText(store.exportEnvelope(state)); toast(`Copié todos tus datos. ${where} y toca “Pegar mis datos”`); }
     catch { toast('No pude copiar. Usa “Respaldar” y luego “Restaurar” en la app'); }
   },
   'cap-app': (el) => commit((s) => { s.settings.capture = { ...(s.settings.capture || {}), app: el.dataset.app }; }),
@@ -614,7 +612,7 @@ async function pasteCapture(text) {
     try { text = await navigator.clipboard.readText(); } catch { text = null; }
     if (text == null) return pasteSheet();
   }
-  const lines = parseCaptureLines(text);
+  const lines = parseCaptureLines(text, today());
   if (!lines.length) {
     const n = parseNotification(text);
     if (n.ignore) { toast(text.trim() ? 'No encontré una compra en lo que copiaste' : 'No hay nada copiado'); return pasteSheet(); }
@@ -625,7 +623,7 @@ async function pasteCapture(text) {
   for (const l of lines) {
     const account = resolveAccount(state.accounts, { last4: l.last4, text: l.card, sources: state.settings.quickAdd?.sources })
       || (l.cat === 'transporte' ? liveAcc(state.settings.transport?.account) : null) || defaultAccount('expense');
-    const r = captureTx({ type: 'expense', amount: l.amount, desc: l.merchant, cat: l.cat || 'otros', account, date: today(), src: 'capture', review: !l.cat }, 'wallet', l.extId, true);
+    const r = captureTx({ type: 'expense', amount: l.amount, desc: l.merchant, cat: l.cat || 'otros', account, date: l.date || today(), src: 'capture', review: !l.cat }, 'wallet', l.extId, true);
     if (r === 'new') added++; else if (r === 'dup') dups++; else seen++;
   }
   toast(added ? `${added} compra${added > 1 ? 's' : ''} registrada${added > 1 ? 's' : ''}${dups ? ` (${dups} ya estaba)` : ''}. Revísalas en Hoy.` : 'Esas compras ya estaban registradas');

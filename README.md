@@ -10,7 +10,7 @@ App web instalable (PWA) para saber **cuánto puedes gastar hoy**, pagar tus tar
   - **Android:** una app de automatización gratis (Automate) o de código abierto (Automation) lee la notificación de **Google Wallet**, que llega al instante al pagar, y la del banco, para compras en línea. Si llegan las dos, la compra se registra una sola vez.
   - **iPhone:** una automatización de Atajos (*Transacción* de Wallet) copia cada pago con Apple Pay, y en la app tocas **Pegar compra**.
   - Los últimos 4 dígitos de cada tarjeta dicen con cuál pagaste.
-- **Android y iPhone:** se instala desde Chrome o Safari ("Agregar a pantalla de inicio").
+- **Android y iPhone:** se instala desde Chrome o Safari ("Agregar a pantalla de inicio"). En Android también hay una app (ver abajo).
 - **Privacidad:** tus números viven **solo en tu celular** (localStorage) y nada se sube a internet. Haz respaldos desde *Más → Respaldo*.
 
 ## Cómo calcula
@@ -55,6 +55,20 @@ FB_KEYSTORE=/ruta/financiabass-firma.p12 FB_KEYSTORE_PASS=… gradle assembleRel
 
 La llave de firma **no** está en el repo. Para que una versión nueva se instale encima de la anterior hay que firmarla con la misma llave.
 
+## iPhone
+
+En iPhone se usa como app web instalada (no hace falta App Store ni Mac):
+
+1. Abre `https://bassandres.github.io/FinanciaBass/` en Safari.
+2. Toca **Compartir** (en iOS 26 está dentro de **⋯**) → **Agregar a pantalla de inicio**, deja activado **Abrir como app web** si aparece, y toca **Agregar**.
+3. Ábrela siempre desde ese ícono. Ahí tus datos no se borran; en una pestaña de Safari, iOS borra los datos de un sitio que no abres en 7 días.
+
+La app del ícono guarda sus datos aparte de Safari y empieza vacía. Si ya la usabas en Safari (o en Android), toca *Más → Respaldo → Copiar mis datos* y en la app del ícono toca **Pegar mis datos**.
+
+Las compras con Apple Pay se capturan con una automatización de Atajos (ver abajo) y se pegan con el botón **Pegar compra** de Hoy. Cada compra conserva la fecha en que pagaste.
+
+Una app nativa de iPhone, como la de Android, necesita una Mac con Xcode y una cuenta de desarrollador de Apple (USD 99 al año). Sin cuenta de pago, la app instalada desde Xcode deja de abrir a los 7 días.
+
 ## Captura automática
 
 Las instrucciones paso a paso, con tu dirección personal (incluye un token), están en *Más → Captura automática*.
@@ -64,7 +78,7 @@ Las instrucciones paso a paso, con tu dirección personal (incluye un token), es
   - Alternativas: **Automation** (código abierto, F-Droid), **MacroDroid Pro** y **Tasker** (de pago).
   - Todas necesitan "Mostrar sobre otras apps" y batería "Sin restricciones" para abrir la app cuando estás en otra.
   - Plantilla de la dirección: `?via=wallet|bank&id=<único>&k=<token>&t=<título>&raw=<texto>`. `raw` va al final para que un `&` o `#` sin codificar no corte el texto.
-- **iPhone (Atajos):** el disparador es la automatización *Transacción*. Las acciones son *Texto* `FB|[Monto]|[Comerciante]|[Tarjeta]|[Fecha actual]` y *Copiar al portapapeles*. iOS no deja que un atajo abra una app web instalada, por eso se pega con un toque.
+- **iPhone (Atajos):** el disparador es la automatización *Transacción*. Las acciones son *Texto* `FB|[Monto]|[Comerciante]|[Tarjeta]|[Fecha actual]` y *Copiar al portapapeles*. iOS no deja que un atajo abra una app web instalada, por eso se pega con un toque. La fecha se entiende en el formato del iPhone (`15/10/26 14:32`, `15 oct 2026`, ISO…).
 - Las compras rechazadas y los pagos recibidos se ignoran. Lo que parece transporte va al apartado de transporte; lo demás queda en "Por revisar".
 
 ## Desarrollo

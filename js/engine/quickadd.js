@@ -51,9 +51,48 @@ export function parseNotification(text, { title = '' } = {}) {
   return { amount, merchant, cat, last4: findLast4(all) };
 }
 
+const MONTHS = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+const MONTHS_EN = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const monthOf = (w) => {
+  const k = norm(w).slice(0, 3);
+  const i = MONTHS.indexOf(k);
+  return i >= 0 ? i + 1 : MONTHS_EN.indexOf(k) + 1 || (k === 'set' ? 9 : 0);
+};
+const iso = (y, m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+const realDate = (y, m, d) => m >= 1 && m <= 12 && d >= 1 && d <= new Date(Date.UTC(y, m, 0)).getUTCDate();
+
+// Fecha que escribe el atajo ([Fecha actual]), en el formato del iPhone: "2026-10-15T14:32", "15/10/26 14:32",
+// "15 oct 2026, 2:32 p.m.", "October 15, 2026" o solo "15 oct". Solo se acepta si no es futura ni de hace más de
+// 60 días; si no se entiende, regresa null (y la compra queda con la fecha de hoy).
+export function parseCaptureDate(when, today) {
+  const t = String(when || '').trim();
+  if (!t || !today) return null;
+  const ty = Number(today.slice(0, 4));
+  const ok = (y, m, d) => {
+    if (y < 100) y += 2000;
+    if (!realDate(y, m, d)) return null;
+    const s = iso(y, m, d);
+    const age = (Date.parse(today) - Date.parse(s)) / 864e5;
+    return age >= 0 && age <= 60 ? s : null;
+  };
+  let m = t.match(/\b(\d{4})-(\d{1,2})-(\d{1,2})/);
+  if (m) return ok(+m[1], +m[2], +m[3]);
+  m = t.match(/\b(\d{1,2})[/.-](\d{1,2})[/.-](\d{2}|\d{4})\b/);
+  // México: día/mes; si así no es una fecha válida y reciente, mes/día (iPhone en inglés de EE. UU.).
+  if (m) return ok(+m[3], +m[2], +m[1]) || ok(+m[3], +m[1], +m[2]);
+  // Sin año ("15 oct") es de este año, o del pasado si la fecha aún no llega (lo de diciembre pegado en enero).
+  const named = (d, mo, y) => (mo ? (y ? ok(+y, mo, +d) : ok(ty, mo, +d) || ok(ty - 1, mo, +d)) : null);
+  m = t.match(/\b(\d{1,2})\s*(?:de\s+)?([a-záéíóú]{3,})\.?(?:\s*(?:de\s+)?(\d{4}))?/i);
+  if (m && monthOf(m[2])) return named(m[1], monthOf(m[2]), m[3]);
+  m = t.match(/\b([a-z]{3,})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?(?:\s+(\d{4}))?/i);
+  if (m && monthOf(m[1])) return named(m[2], monthOf(m[1]), m[3]);
+  return null;
+}
+
 // Líneas que escribe el atajo de iPhone (Wallet → Transacción):  FB|<monto>|<comercio>|<tarjeta>|<fecha y hora>
 // Puede haber varias (si el atajo las va acumulando). Cada una trae su propio id para no registrarla dos veces.
-export function parseCaptureLines(text) {
+// Con `today`, cada línea trae también la fecha de la compra (date) si el atajo la escribió.
+export function parseCaptureLines(text, today = null) {
   const out = [];
   for (const line of String(text || '').split(/\r?\n/)) {
     const l = line.trim();
@@ -62,7 +101,7 @@ export function parseCaptureLines(text) {
     const amount = parseAmount(amt);
     if (!amount) continue;
     const text2 = `${merchant} ${card}`;
-    out.push({ amount, merchant: merchant.slice(0, 60) || 'Compra', card, when, cat: TRANSPORT_RE.test(text2) ? 'transporte' : null,
+    out.push({ amount, merchant: merchant.slice(0, 60) || 'Compra', card, when, date: parseCaptureDate(when, today), cat: TRANSPORT_RE.test(text2) ? 'transporte' : null,
       last4: findLast4(card), extId: `fb:${hashStr(l)}` });
   }
   return out;

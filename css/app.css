@@ -339,3 +339,10 @@ html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%;
 select.mini { width: auto; max-width: 42%; font-size: .78rem; padding: 7px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface-2); color: var(--text); }
 .ic.ic-btn { border: 0; cursor: pointer; flex: none; }
 a.btn { text-decoration: none; }
+
+/* Sin zoom por doble toque (el teclado de montos se usa rápido). */
+button, a, .chip, .tile, .keypad button { touch-action: manipulation; }
+/* iPhone: Safari acerca la pantalla al tocar un campo con letra de menos de 16px. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type=checkbox]):not([type=radio]), select, textarea:not([readonly]) { font-size: 16px !important; }
+}

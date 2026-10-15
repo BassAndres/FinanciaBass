@@ -255,6 +255,15 @@ function liquidity(state, ctx, P, t, { liquid, disponible, base, statements }) {
   };
 }
 
+// Lo que te sobró del periodo anterior (para mandarlo a tu alcancía): lo libre que quedó al cerrarlo. El colchón
+// no cuenta: es lo mínimo que siempre se queda en tu cuenta, no un sobrante.
+export function periodLeftover(state, P) {
+  if (P.first) return null;
+  const prev = periodFor(state.settings, addDays(P.s, -1));
+  const amount = computeDashboard(state, prev.e).disponible;
+  return amount > 0 ? { amount, date: prev.e, key: `leftover:${prev.s}` } : null;
+}
+
 // Movimientos automáticos (p. ej. mensualidades MSI y suscripciones con autoPost) que ya debieron cargarse.
 export function autoPostDue(state, today) {
   const done = new Set(state.tx.filter((x) => x.planRef).map((x) => x.planRef));
