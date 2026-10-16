@@ -136,7 +136,7 @@ export function accountSheet(a) {
 // ---------- ingresos y gastos que se repiten ----------
 export function schedulesList() {
   listSheet('Ingresos y gastos fijos', 'Sueldo, beca, suscripciones, MSI, ahorro… Toca uno para cambiar monto, día o tarjeta.',
-    ctx.state.schedules.map((s) => ({
+    ctx.state.schedules.filter((s) => !s.end || s.end >= ctx.today()).map((s) => ({
       lead: `<span class="ic hue-${s.kind === 'income' ? 'green' : s.kind === 'savings' ? 'green' : 'gray'}">${icon(s.kind === 'income' ? 'income' : s.kind === 'savings' ? 'savings' : s.kind === 'msi' ? 'msi' : 'repeat', 18)}</span>`,
       title: s.name, meta: `${money(s.amount)} · ${describeRule(s.rule)}`, open: () => scheduleSheet(s),
     })), 'Agregar ingreso o gasto fijo', () => scheduleSheet(null));
@@ -196,7 +196,9 @@ export function scheduleSheet(s) {
           // Lo de meses pasados sin registrar no se cobra con el monto nuevo: la regla nueva no registra solo
           // nada antes de hoy, y se conservan los "saltar" y "no registrar solo" que ya habías marcado.
           const nid = uid();
-          st.schedules.push({ ...next, id: nid, start: after, ...(next.autoPost ? { autoSince: next.autoSince > t ? next.autoSince : t } : {}) });
+          // Si la fecha de fin quedó antes del nuevo inicio (p. ej. al editar uno que ya había terminado), no aplica.
+          const end = next.end && next.end >= after ? next.end : undefined;
+          st.schedules.push({ ...next, id: nid, start: after, end, ...(next.autoPost ? { autoSince: next.autoSince > t ? next.autoSince : t } : {}) });
           for (const [k, o] of Object.entries(st.overrides)) {
             if (k.startsWith(`${s.id}@`) && k.split('@')[1] >= after) st.overrides[`${nid}@${k.split('@')[1]}`] = { ...o };
           }

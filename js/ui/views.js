@@ -308,7 +308,7 @@ export function planView(state, d) {
     trail: `<b class="amt ${i.kind === 'income' ? 'pos' : ''} ${i.status === 'skipped' ? 'strike' : ''}">${money(i.status === 'done' ? i.value : i.signed, { sign: i.kind === 'income' })}</b>${icon('chevron', 16, 'mute')}`,
   })).join('')}</div><p class="foot">Toca cualquiera para marcarlo, cambiar el monto de este mes o saltarlo.</p>`)}
 
-  ${group('Se repite', `<div class="panel">${state.schedules.map((s) => item({
+  ${group('Se repite', `<div class="panel">${state.schedules.filter((s) => !s.end || s.end >= d.today).map((s) => item({
     action: `data-action="sched-edit" data-id="${esc(s.id)}"`,
     lead: badge(s.kind === 'income' ? 'ingreso' : s.kind === 'savings' ? 'ahorro' : s.kind === 'msi' ? 'msi' : 'fijo'),
     title: esc(s.name), meta: `${describeRule(s.rule)} · ${esc(accName(state, s.account))}${s.autoPost ? ' · automático' : ''}`,
