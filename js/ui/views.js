@@ -537,15 +537,10 @@ export function masView(state, d) {
       <button class="btn sm ghost" data-action="auto-backups">${icon('clock', 16)}Copias automáticas</button>
       ${d.env?.native ? '' : `<button class="btn sm ghost" data-action="copy-data">${icon('copy', 16)}Copiar mis datos</button>`}
     </div>
-    ${importInput(d.env?.native)}
   </div>`)}
   <button class="btn ghost danger wide" data-action="reset">${icon('trash', 18)}Borrar todo</button>
   <p class="colophon">FinanciaBass · tus números nunca salen de tu celular</p>`;
 }
-
-// Selector del archivo de respaldo. En la app de Android sin filtro: su selector toma solo el primer tipo de
-// "accept" (".txt", que no es un tipo válido) y no dejaba elegir ningún archivo.
-export const importInput = (native) => `<input type="file" id="import-file" ${native ? '' : 'accept=".txt,.json,application/json,text/plain"'} hidden>`;
 
 // Hoja para registrar un movimiento.
 export function entrySheet(state, draft, candidates = []) {

@@ -642,6 +642,9 @@ initEditors({
 });
 document.querySelectorAll('[data-icon]').forEach((el) => { el.innerHTML = icon(el.dataset.icon, Number(el.dataset.size) || 22); });
 $('#fab').onclick = () => (state ? openEntry({}) : null);
+// App de Android: su selector de archivos toma solo el primer tipo de "accept" (".txt", que no es un tipo válido)
+// y no dejaba elegir el respaldo; ahí va sin filtro.
+if (isNative()) $('#import-file').removeAttribute('accept');
 render();
 handleIntents();
 pullNative();

@@ -41,6 +41,8 @@
     </div>
   </div>
   <div id="toast" class="toast" role="status" hidden></div>
+  <!-- Fuera de #main: si la pantalla se vuelve a dibujar mientras eliges el archivo, el respaldo igual llega. -->
+  <input type="file" id="import-file" accept=".txt,.json,application/json,text/plain" hidden>
 
   <script type="module" src="./js/app.js"></script>
 </body>
