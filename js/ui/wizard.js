@@ -3,7 +3,7 @@
 import { buildState, computeDashboard, money, fmtDate, parseAmount, cutForPurchase, dueForCut, dateOf, year, month } from '../engine/index.js';
 import { esc, $ } from './dom.js';
 import { icon } from './icons.js';
-import { iosAddSteps } from './views.js';
+import { iosAddSteps, importInput } from './views.js';
 
 const KEY = 'financiabass:wizard';
 const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
@@ -76,7 +76,7 @@ function stepHtml(today) {
           <textarea id="config-code" rows="3" placeholder="FB1…"></textarea>
           <button type="button" class="btn wide" data-wact="code">Cargar código</button>
         </details>
-        <input type="file" id="import-file" accept=".txt,.json,application/json,text/plain" hidden>
+        ${importInput(ctx.native)}
       </div>
       <p class="colophon">${icon('shield', 16)} Tus datos se guardan solo en este celular. No hay cuentas ni servidores.</p>`;
   }
