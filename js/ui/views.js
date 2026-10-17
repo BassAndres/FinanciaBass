@@ -104,6 +104,8 @@ export function hoyView(state, d) {
 
   <div class="tiles">${quick}</div>
 
+  ${progressCard(d)}
+
   ${d.deficit ? `<div class="notice bad">${icon('alert')}<p><b>Este periodo no alcanza.</b> Te faltan ${money(-Math.min(d.R, d.libre))}. En <a href="#/plan">Plan</a> puedes saltar un fijo o usar tu alcancía.</p></div>` : ''}
   ${d.liquidity.short ? `<div class="notice warn">${icon('clock')}<p><b>Ojo con el ${fmtDate(d.liquidity.minDate)}.</b> Ese día te faltarían ${money(d.liquidity.short)} (${esc(d.liquidity.cause || 'pagos')}). Ya lo tomé en cuenta en tu número de hoy.</p></div>` : ''}
 
@@ -134,6 +136,39 @@ export function hoyView(state, d) {
   ${installNotice(state, d)}
   ${staleBackup ? `<div class="notice">${icon('shield')}<p><b>Haz un respaldo.</b> Tus datos solo viven en este celular.</p><div class="notice-actions"><button class="btn sm ghost" data-action="backup">Respaldar</button></div></div>` : ''}
   `;
+}
+
+// Tu avance como juego: días que faltan para tu pago, el mapa del periodo, racha, nivel y tu premio.
+const MARK_LABEL = { z: 'sin gastos', w: 'gastaste menos que tu base', o: 'sin pasarte', l: 'te pasaste' };
+const markTitle = (x) => `${fmtDate(x.date)}: ${x.today ? `hoy, ${x.mark === 'l' ? 'vas abajo' : 'vas bien'}` : x.mark ? MARK_LABEL[x.mark] : 'falta'}`;
+export const progressMap = (p, cls = '') => `<ol class="pmap ${cls}">${p.map.map((x) => `<li class="${x.mark ? `m-${x.mark}` : ''}${x.today ? ' today' : ''}" title="${esc(markTitle(x))}">${cls ? Number(x.date.slice(8)) : ''}</li>`).join('')}<li class="pay" title="Día de pago">${icon('gift', cls ? 16 : 12)}</li></ol>`;
+
+function progressCard(d) {
+  const p = d.progress;
+  if (!p) return '';
+  const pctDone = p.notStarted ? 0 : Math.round((p.day / p.days) * 100);
+  const fresh = p.badges.filter((b) => b.fresh);
+  const r = p.reward;
+  const n = p.notStarted ? p.startsIn : p.toPayday;
+  return `<section class="game${fresh.length || r?.done ? ' glow' : ''}" data-action="progress" role="button" tabindex="0" aria-label="Ver tu progreso">
+    <div class="game-top">
+      <div class="ring" style="--p:${pctDone}%"><span><b>${n}</b><small>${n === 1 ? 'día' : 'días'}</small></span></div>
+      <div class="game-body">
+        <p class="game-title">${p.notStarted ? 'Para que empiece tu plan' : n === 1 ? '¡Mañana te pagan!' : 'Para tu próximo pago'}</p>
+        <p class="game-meta">${p.notStarted ? fmtDate(d.period.s) : `${fmtDate(p.payday)} · día ${p.day} de ${p.days}`}</p>
+        <div class="chips">
+          <span class="chip ${p.streak ? 'hot' : ''}">${icon('flame', 14)}${p.streak} ${p.streak === 1 ? 'día' : 'días'}</span>
+          <span class="chip">${icon('star', 14)}Nivel ${p.level.level}</span>
+          ${r ? `<span class="chip ${r.done ? 'win' : ''}">${icon('gift', 14)}${r.done ? '¡Premio!' : `${r.value}/${r.goal}`}</span>` : ''}
+        </div>
+      </div>
+      ${icon('chevron', 16, 'mute')}
+    </div>
+    ${p.notStarted ? '' : progressMap(p)}
+    ${r?.done ? `<p class="game-news">${icon('gift', 16)}<span>Ganaste tu premio: <b>${esc(r.text)}</b>. Toca aquí para reclamarlo.</span></p>`
+    : fresh.length ? `<p class="game-news">${icon('trophy', 16)}<span>Logro nuevo: <b>${fresh.map((b) => esc(b.name)).join(', ')}</b></span></p>`
+      : p.notStarted ? '' : `<p class="game-hint">${p.todayMark === 'l' ? 'Hoy vas abajo: si ya no gastas, mañana puedes volver a sumar.' : `Si hoy terminas sin pasarte, tu racha sube a ${p.streak + 1}.`}</p>`}
+  </section>`;
 }
 
 // En iPhone, Safari borra los datos de un sitio que no se usa en 7 días; instalada en la pantalla de inicio no.

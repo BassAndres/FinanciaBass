@@ -1,5 +1,5 @@
 // Service worker: guarda la app para que abra sin internet. Sube VERSION cuando cambie algún archivo.
-const VERSION = 'fb-v28';
+const VERSION = 'fb-v29';
 const FILES = [
   './',
   './index.html',
@@ -31,6 +31,7 @@ const FILES = [
   './js/engine/quickadd.js', './js/engine/setup.js', './js/engine/recommend.js',
   './js/engine/schedule.js',
   './js/engine/state.js',
+  './js/engine/progress.js',
 ];
 
 self.addEventListener('install', (e) => {

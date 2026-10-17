@@ -74,6 +74,14 @@ assert.equal(wiz.s.firstEnd, '2026-10-14');
 assert.equal(wiz.s.fares.length, 2);
 assert.deepEqual(wiz.accs, ['banco', 'efectivo', 'tarjeta-x', 'ahorro']);
 assert.equal(wiz.n, 2);
+// Progreso: cuenta regresiva a la siguiente quincena (15 oct) y un premio propio.
+assert.match(await page.textContent('.game .ring'), /14\s*días/);
+await page.click('.game');
+await page.click('[data-action="reward-set"]');
+await page.fill('input[name="text"]', 'Un helado');
+await page.click('[data-sheet-action="ok"]');
+assert.deepEqual(await page.evaluate(() => window.fb.state.progress.reward), { text: 'Un helado', goal: 7, kind: 'streak', since: '2026-10-01' });
+assert.match(await page.textContent('.game .chips'), /0\/7/);
 // Compra de Google Wallet (Android) reconocida por los últimos 4 dígitos, y luego la del banco: solo una.
 const tok = wiz.s.quickAdd.token;
 await page.goto(`${base}?raw=${encodeURIComponent('$89.00 con Visa •••• 4321')}&t=OXXO&via=wallet&id=w1&k=${tok}`);

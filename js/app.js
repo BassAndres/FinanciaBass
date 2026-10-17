@@ -3,17 +3,17 @@ import {
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
   parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl, isCaptureTest, fromBrowserPkg, TEST_TEXT,
-  recommendScheduleCards, changeScheduleAccount, nativeCapture, periodLeftover,
+  recommendScheduleCards, changeScheduleAccount, nativeCapture, periodLeftover, progressLog, progressSummary,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo } from './ui/dom.js';
-import { hoyView, movsView, tarjetasView, planView, masView, entrySheet, billGroups, partReason } from './ui/views.js';
+import { hoyView, movsView, tarjetasView, planView, masView, entrySheet, billGroups, partReason, progressMap } from './ui/views.js';
 import { renderWizard, clearWizard } from './ui/wizard.js';
 import { isNative, native } from './native.js';
 import { icon } from './ui/icons.js';
 import {
   initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
-  faresSheet, periodSheet, breakdownSheet, cycleDueSheet, planWhySheet, recSheet,
+  faresSheet, periodSheet, breakdownSheet, cycleDueSheet, planWhySheet, recSheet, progressSheet, rewardSheet,
 } from './ui/editors.js';
 
 let state = store.load();
@@ -113,6 +113,7 @@ function render() {
   dash.outlook = monthOutlook(state, t);
   dash.reminders = reminderEvents(dash).map((e) => ({ ...e, gcal: googleCalendarLink(e) }));
   dash.leftover = leftoverPrompt();
+  dash.progress = updateProgress(t);
   dash.recs = recommendScheduleCards(state, t, dash.balances);
   dash.env = { os: platform(), standalone: isStandalone(), canInstall: !!installEvent, browser: browserInfo(), native: isNative() };
   if (dash.env.native && route() === 'mas') dash.nat = { status: native.status(), apps: native.apps() };
@@ -123,6 +124,21 @@ function render() {
     const n = dash.payPlan.filter((p) => p.date <= addDays(t, 3)).length + dash.prompts.length;
     (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch(() => {});
   }
+}
+
+// Progreso (racha, puntos, logros). Revisar cada día del periodo cuesta, así que solo se repite si tus datos cambian.
+// Las marcas de cada día y los logros ganados se guardan: un logro no se pierde aunque después cambien tus datos.
+let progressMemo = { key: '', log: null };
+function updateProgress(t) {
+  const { progress = {}, ...data } = state;
+  const key = t + JSON.stringify(data);
+  if (progressMemo.key !== key) progressMemo = { key, log: progressLog(state, t) };
+  const sum = progressSummary(state, dash, progressMemo.log);
+  if (sum.newBadges.length || JSON.stringify(progress.log) !== JSON.stringify(progressMemo.log)) {
+    state.progress = { ...progress, log: progressMemo.log, badges: { ...progress.badges, ...Object.fromEntries(sum.newBadges.map((id) => [id, t])) } };
+    store.save(state);
+  }
+  return sum;
 }
 
 function leftoverPrompt() {
@@ -390,6 +406,22 @@ const actions = {
   },
   'inst-open': (el) => instanceSheet(dash.instances.find((x) => x.id === el.dataset.id)),
   breakdown: () => breakdownSheet(dash),
+  progress: () => progressSheet(dash, { progressMap }),
+  'reward-set': () => rewardSheet(state.progress.reward),
+  'reward-claim'() {
+    const r = dash.progress.reward;
+    if (!r?.done) return;
+    commit((s) => {
+      s.progress.claimed = (s.progress.claimed || 0) + 1;
+      s.progress.won = [...(s.progress.won || []), { text: r.text, date: today() }].slice(-20);
+      s.progress.reward = null;
+    }, `¡Te lo ganaste! Disfruta: ${r.text}`);
+    actions.progress();
+  },
+  'reward-clear'() {
+    commit((s) => { s.progress.reward = null; }, 'Premio quitado', true);
+    actions.progress();
+  },
   'rec-open'(el) {
     const rec = dash.recs.items.find((x) => x.schedule === el.dataset.id);
     if (!rec) return;
