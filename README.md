@@ -3,7 +3,8 @@
 App web instalable (PWA) para saber **cuánto puedes gastar hoy**, pagar tus tarjetas a tiempo y ahorrar lo que no uses.
 
 - **Hoy puedes gastar $X:** lo que no gastes se acumula para mañana. Si te pasas, los días siguientes bajan y la app te dice cuándo te recuperas.
-- **Tu avance como juego:** cuántos días faltan para tu próximo pago, un mapa del periodo con cada día en verde o en rojo, racha de días sin pasarte, puntos y niveles, logros y un **premio que tú eliges** (p. ej. "un helado en 7 días seguidos sin pasarte").
+- **Tu avance como juego:** cuántos días faltan para tu próximo pago y cuánto te queda para esos días, un calendario del periodo con cada día en verde o en rojo, tu racha de días sin pasarte y un **premio que tú eliges** (p. ej. "un helado en 7 días seguidos sin pasarte"). Los logros, puntos y niveles tienen su propio botón en Hoy.
+- **Lo que tienes apartado:** cuánto te queda del transporte y si alcanza para los días que faltan, los fijos y el ahorro que faltan por pagar, y tu colchón.
 - **Tarjetas:** cortes, fechas límite (recorridas por días inhábiles CNBV), uso de tu límite y un plan para pagar lo antes posible sin quedarte sin dinero.
 - **Ingresos y fijos que se repiten:** sueldo, beca, suscripciones y MSI. Los cargos automáticos se registran solos.
 - **Para cualquier persona:** un asistente de bienvenida arma tu plan (cuentas, efectivo, tarjetas con su corte y fecha límite, ingresos, gastos fijos y transporte). Te pueden pagar a fin de mes, un día fijo, por quincena, por semana o cada 2 semanas.
