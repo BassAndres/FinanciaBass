@@ -103,3 +103,24 @@ test('antes de que empiece el plan solo hay cuenta regresiva', () => {
   assert.equal(p.startsIn, 1);
   assert.deepEqual(log, {});
 });
+
+test('lo apartado: cuánto queda del transporte y si alcanza; fijos pagados y por pagar', () => {
+  const s = demoState();
+  s.tx.push(tx({ type: 'expense', account: 'tc', amount: 2000, date: '2026-10-03', cat: 'transporte', desc: 'Metro', pool: true }));
+  let d = computeDashboard(s, '2026-10-03');
+  // 30 días de $20 = $600; gastaste $20 y ya usaste el de hoy: faltan 27 días (del 4 al 30).
+  assert.deepEqual([d.transport.left, d.transport.days, d.transport.need], [58000, 27, 54000]);
+  assert.equal(computeDashboard(s, '2026-10-04').transport.days, 27);
+  assert.deepEqual([d.fixedPlan.pending, d.fixedPlan.paid, d.fixedPlan.n, d.fixedPlan.next.name], [100000, 0, 1, 'Suscripción']);
+  s.tx.push(tx({ type: 'expense', account: 'ta', amount: 100000, date: '2026-10-15', cat: 'fijo', desc: 'Suscripción', planRef: 'fijo@2026-10-15' }));
+  d = computeDashboard(s, '2026-10-16');
+  assert.deepEqual([d.fixedPlan.pending, d.fixedPlan.paid, d.fixedPlan.n], [0, 100000, 0]);
+});
+
+test('logros: avance hacia la meta y el más cercano', () => {
+  const { p } = summary(demoState(), '2026-10-03');
+  const week = p.badges.find((b) => b.id === 'streak7');
+  assert.deepEqual([week.value, week.goal, week.unlocked], [2, 7, false]);
+  assert.equal(p.next.id, 'streak3');
+  assert.equal(p.yesterday, 'z');
+});

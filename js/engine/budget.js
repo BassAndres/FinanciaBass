@@ -141,6 +141,19 @@ export function computeDashboard(state, today, { lite = false } = {}) {
   const liq = liquidity(state, ctx, P, t, { liquid: liquid - dueNow, disponible, base, statements });
   const cardOfDay = recommendCard(cards);
 
+  // Lo apartado: transporte (cuánto queda y si alcanza para los días que faltan) y los fijos y ahorro del periodo.
+  const rate = st.transport?.rate || 0;
+  const usedToday = state.tx.some((x) => x.date === t && ctx.isTransport(x));
+  const trDays = rate ? transportDays(st, usedToday ? addDays(t, 1) : t, P.e) : 0;
+  const planned = (kinds) => {
+    const xs = now.status.filter((i) => kinds.includes(i.kind) && i.status !== 'skipped');
+    const open = xs.filter((i) => i.status !== 'done').sort((a, b) => (a.date < b.date ? -1 : 1));
+    return {
+      paid: xs.filter((i) => i.status === 'done').reduce((a, i) => a + Math.abs(i.value), 0),
+      pending: open.reduce((a, i) => a + i.amount, 0), n: open.length, next: open[0] || null,
+    };
+  };
+
   return {
     today, period: P, k, D, daysLeft: D - k, libre, base, disponible, accrued: accrued(k), periodStart: s0,
     variableSpent, otherChanges: libre + reserve - now.R - variableSpent, reserve,
@@ -152,7 +165,8 @@ export function computeDashboard(state, today, { lite = false } = {}) {
     net: netOf(now.bal, accounts), liquid, balances: now.bal,
     instances: now.status,
     prompts: now.status.filter((i) => (i.status === 'due' || i.status === 'overdue') && !i.autoPost),
-    transport: { budget: Q, spent: now.spentT, rate: st.transport?.rate || 0 },
+    transport: { budget: Q, spent: now.spentT, rate, left: Q - now.spentT, days: trDays, need: rate * trDays },
+    fixedPlan: planned(['fixed', 'msi']), savingsPlan: planned(['savings']),
     statements, payPlan: liq.plan, liquidity: liq, cards, cardOfDay,
   };
 }

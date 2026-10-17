@@ -1,6 +1,6 @@
 // Pantallas. Cada función regresa HTML; los botones usan data-action y los maneja app.js.
-import { money, fmtDate, diffDays, describeRule } from '../engine/index.js';
-import { esc } from './dom.js';
+import { money, fmtDate, diffDays, describeRule, addDays, localToday, weekday, DAY_XP } from '../engine/index.js';
+import { esc, dateLabel } from './dom.js';
 import { APK_URL, NATIVE_LATEST } from '../native.js';
 import { icon, badge, catMeta } from './icons.js';
 
@@ -87,7 +87,7 @@ export function hoyView(state, d) {
   ].join('');
 
   return `
-  <header class="top"><p class="eyebrow">${fmtDate(d.today)}</p><h1>Tu día</h1></header>
+  <header class="top top-row"><div><p class="eyebrow">${fmtDate(d.today)}</p><h1>Tu día</h1></div>${trophyButton(d)}</header>
 
   <section class="hero ${heroTone(d)}" data-action="breakdown" role="button" tabindex="0" aria-label="Ver cómo se calcula">
     <p class="hero-label">${P.notStarted ? `Tu plan empieza el ${fmtDate(P.s)}` : 'Hoy puedes gastar'}<span class="hero-info">${icon('info', 16)}</span></p>
@@ -121,6 +121,8 @@ export function hoyView(state, d) {
 
   ${todayGroup(state, d)}
 
+  ${setAsideGroup(state, d)}
+
   ${d.prompts.length ? group('Pendientes', `<div class="panel">${d.prompts.map((i) => promptRow(state, i)).join('')}</div>`) : ''}
 
   ${review.length ? group('Por revisar', `<div class="panel">${review.map((t) => item({
@@ -138,37 +140,88 @@ export function hoyView(state, d) {
   `;
 }
 
-// Tu avance como juego: días que faltan para tu pago, el mapa del periodo, racha, nivel y tu premio.
+// Tu avance como juego: días que faltan para tu pago, el mapa del periodo, racha y tu premio.
 const MARK_LABEL = { z: 'sin gastos', w: 'gastaste menos que tu base', o: 'sin pasarte', l: 'te pasaste' };
 const markTitle = (x) => `${fmtDate(x.date)}: ${x.today ? `hoy, ${x.mark === 'l' ? 'vas abajo' : 'vas bien'}` : x.mark ? MARK_LABEL[x.mark] : 'falta'}`;
-export const progressMap = (p, cls = '') => `<ol class="pmap ${cls}">${p.map.map((x) => `<li class="${x.mark ? `m-${x.mark}` : ''}${x.today ? ' today' : ''}" title="${esc(markTitle(x))}">${cls ? Number(x.date.slice(8)) : ''}</li>`).join('')}<li class="pay" title="Día de pago">${icon('gift', cls ? 16 : 12)}</li></ol>`;
+// Chico: una tira de cuadritos. Grande: un calendario de lunes a domingo con el número de cada día.
+export function progressMap(p, big = false) {
+  const cells = p.map.map((x) => `<li class="${x.mark ? `m-${x.mark}` : ''}${x.today ? ' today' : ''}" title="${esc(markTitle(x))}">${big
+    ? `${Number(x.date.slice(8))}${x.date.endsWith('-01') ? `<small>${fmtDate(x.date, false).split(' ')[1]}</small>` : ''}` : ''}</li>`).join('');
+  const pay = `<li class="pay" title="Día de pago: ${fmtDate(p.payday)}">${icon('gift', big ? 16 : 12)}</li>`;
+  if (!big) return `<ol class="pmap">${cells}${pay}</ol>`;
+  return `<div class="pcal"><div class="pcal-wd">${['L', 'M', 'M', 'J', 'V', 'S', 'D'].map((x) => `<span>${x}</span>`).join('')}</div>
+    <ol class="pmap big">${'<li class="blank"></li>'.repeat((weekday(p.map[0].date) + 6) % 7)}${cells}${pay}</ol></div>`;
+}
 
 function progressCard(d) {
   const p = d.progress;
   if (!p) return '';
-  const pctDone = p.notStarted ? 0 : Math.round((p.day / p.days) * 100);
-  const fresh = p.badges.filter((b) => b.fresh);
   const r = p.reward;
   const n = p.notStarted ? p.startsIn : p.toPayday;
-  return `<section class="game${fresh.length || r?.done ? ' glow' : ''}" data-action="progress" role="button" tabindex="0" aria-label="Ver tu progreso">
+  const left = d.R - d.reserve;
+  const pctDone = p.notStarted ? 0 : Math.round((p.day / p.days) * 100);
+  const hint = p.notStarted ? ''
+    : `${p.yesterday ? `<b>Ayer +${DAY_XP[p.yesterday]} puntos</b> (${MARK_LABEL[p.yesterday]}). ` : ''}${p.todayMark === 'l'
+      ? 'Hoy vas abajo: si ya no gastas, mañana vuelves a sumar.'
+      : `Si hoy terminas sin pasarte, tu racha sube a ${p.streak + 1}.`}`;
+  return `<section class="game${r?.done ? ' glow' : ''}" data-action="progress" role="button" tabindex="0" aria-label="Ver tu periodo">
     <div class="game-top">
       <div class="ring" style="--p:${pctDone}%"><span><b>${n}</b><small>${n === 1 ? 'día' : 'días'}</small></span></div>
       <div class="game-body">
-        <p class="game-title">${p.notStarted ? 'Para que empiece tu plan' : n === 1 ? '¡Mañana te pagan!' : 'Para tu próximo pago'}</p>
-        <p class="game-meta">${p.notStarted ? fmtDate(d.period.s) : `${fmtDate(p.payday)} · día ${p.day} de ${p.days}`}</p>
+        <p class="game-title">${p.notStarted ? 'Para que empiece tu plan' : n === 1 ? '¡Mañana te pagan!' : `Para tu pago del ${fmtDate(p.payday, false)}`}</p>
+        <p class="game-meta">${p.notStarted ? fmtDate(d.period.s) : left >= 0 ? `Te quedan <b>${money(left)}</b> para ${n === 1 ? 'hoy' : `estos ${n} días`}` : `Vas <b class="down">${money(-left)}</b> abajo en el periodo`}</p>
         <div class="chips">
-          <span class="chip ${p.streak ? 'hot' : ''}">${icon('flame', 14)}${p.streak} ${p.streak === 1 ? 'día' : 'días'}</span>
-          <span class="chip">${icon('star', 14)}Nivel ${p.level.level}</span>
-          ${r ? `<span class="chip ${r.done ? 'win' : ''}">${icon('gift', 14)}${r.done ? '¡Premio!' : `${r.value}/${r.goal}`}</span>` : ''}
+          <span class="chip ${p.streak ? 'hot' : ''}">${icon('flame', 14)}${p.streak ? `Racha de ${p.streak}` : 'Sin racha'}</span>
+          ${r ? `<span class="chip ${r.done ? 'win' : ''}">${icon('gift', 14)}${r.done ? '¡Premio!' : `${esc(r.text)} ${r.value}/${r.goal}`}</span>` : `<span class="chip">${icon('gift', 14)}Ponte un premio</span>`}
         </div>
       </div>
       ${icon('chevron', 16, 'mute')}
     </div>
     ${p.notStarted ? '' : progressMap(p)}
     ${r?.done ? `<p class="game-news">${icon('gift', 16)}<span>Ganaste tu premio: <b>${esc(r.text)}</b>. Toca aquí para reclamarlo.</span></p>`
-    : fresh.length ? `<p class="game-news">${icon('trophy', 16)}<span>Logro nuevo: <b>${fresh.map((b) => esc(b.name)).join(', ')}</b></span></p>`
-      : p.notStarted ? '' : `<p class="game-hint">${p.todayMark === 'l' ? 'Hoy vas abajo: si ya no gastas, mañana puedes volver a sumar.' : `Si hoy terminas sin pasarte, tu racha sube a ${p.streak + 1}.`}</p>`}
+    : hint ? `<p class="game-hint">${hint}</p>` : ''}
   </section>`;
+}
+
+// Botón de logros y nivel en el encabezado de Hoy.
+function trophyButton(d) {
+  const p = d.progress;
+  if (!p) return '';
+  const got = p.badges.filter((b) => b.unlocked).length;
+  return `<button type="button" class="trophy${p.badges.some((b) => b.fresh) ? ' new' : ''}" data-action="badges" aria-label="Tus logros y tu nivel">
+    ${icon('trophy', 20)}<span><b>${got}/${p.badges.length}</b><small>Nivel ${p.level.level}</small></span></button>`;
+}
+
+// Lo que tienes apartado y cuánto te queda: transporte, fijos y ahorro del periodo, y tu colchón.
+function setAsideGroup(state, d) {
+  const tr = d.transport;
+  const fx = d.fixedPlan;
+  const sv = d.savingsPlan;
+  const rows = [];
+  if (tr.rate) {
+    const extra = tr.left - tr.need;
+    const tone = tr.left < 0 ? 'bad' : extra < 0 ? 'warn' : 'ok';
+    rows.push(`<div class="aside">
+      <div class="aside-head"><span class="ic hue-blue">${icon('metro', 18)}</span><span class="item-body"><span class="item-title">Transporte</span>
+        <span class="item-meta">${tr.left < 0 ? `Te pasaste ${money(-tr.left)}: eso sale de tu número` : `${tr.days ? `Faltan ${tr.days} ${tr.days === 1 ? 'día' : 'días'} de ${money(tr.rate)}` : 'Ya no faltan días de transporte'} · ${extra > 0 ? `te sobran ${money(extra)}` : extra === 0 ? 'te alcanza justo' : `te faltarían ${money(-extra)}`}`}</span></span>
+        <span class="trail-col"><b class="amt">${money(Math.max(0, tr.left))}</b><small class="mute">de ${money(tr.budget, { decimals: false })}</small></span></div>
+      <div class="meter ${tone}"><i style="width:${tr.budget ? Math.max(0, Math.min(100, Math.round((tr.left / tr.budget) * 100))) : 0}%"></i></div></div>`);
+  }
+  for (const [x, label, ic, hue] of [[fx, 'Fijos por pagar', 'repeat', 'hue-violet'], [sv, 'Ahorro por apartar', 'savings', 'hue-green']]) {
+    if (!x.n && !x.paid) continue;
+    const total = x.paid + x.pending;
+    rows.push(`<a class="aside" href="#/plan">
+      <div class="aside-head"><span class="ic ${hue}">${icon(ic, 18)}</span><span class="item-body"><span class="item-title">${label}</span>
+        <span class="item-meta">${x.n ? `${x.n} ${x.n === 1 ? 'pago' : 'pagos'} · sigue ${esc(x.next.name)} el ${fmtDate(x.next.date, false)}${x.paid ? ` · ya pagaste ${money(x.paid)}` : ''}` : `¡Ya quedó todo este periodo! (${money(x.paid)})`}</span></span>
+        <span class="trail-col"><b class="amt">${money(x.pending)}</b><small class="mute">de ${money(total, { decimals: false })}</small></span></div>
+      <div class="meter"><i style="width:${total ? Math.round((x.paid / total) * 100) : 100}%"></i></div></a>`);
+  }
+  if (d.reserve) {
+    rows.push(`<div class="aside"><div class="aside-head"><span class="ic hue-amber">${icon('shield', 18)}</span><span class="item-body"><span class="item-title">Colchón</span>
+      <span class="item-meta">Lo mínimo que siempre se queda en tu cuenta. No se reparte.</span></span><b class="amt">${money(d.reserve)}</b></div></div>`);
+  }
+  if (!rows.length) return '';
+  return group('Lo que tienes apartado', `<div class="panel">${rows.join('')}</div><p class="foot">Esto ya está separado de tu número de hoy: no lo bajes gastándolo en otra cosa.</p>`);
 }
 
 // En iPhone, Safari borra los datos de un sitio que no se usa en 7 días; instalada en la pantalla de inicio no.
@@ -579,6 +632,7 @@ export function masView(state, d) {
 
 // Hoja para registrar un movimiento.
 export function entrySheet(state, draft, candidates = []) {
+  const today = localToday();
   const types = [['expense', 'Gasto'], ['income', 'Ingreso'], ['pay', 'Pagar tarjeta'], ['transfer', 'Mover'], ['adjust', 'Saldo real']];
   const accs = state.accounts.filter((a) => !a.archived);
   const fromList = draft.type === 'expense' ? accs.filter((a) => a.type !== 'savings')
@@ -612,7 +666,7 @@ export function entrySheet(state, draft, candidates = []) {
   </details>` : ''}
   <div class="fields">
     ${draft.type !== 'adjust' ? `<input class="field" type="text" placeholder="Descripción (opcional)" value="${esc(draft.desc || '')}" data-field="desc">` : ''}
-    <input class="field" type="date" value="${esc(draft.date)}" data-field="date" aria-label="Fecha">
+    <button type="button" class="field datebtn wide" data-pick-date aria-label="Fecha">${icon('calendar', 18)}<span>${draft.date === today ? 'Hoy' : draft.date === addDays(today, -1) ? 'Ayer' : ''} ${dateLabel(draft.date)}</span>${icon('chevron', 16, 'mute')}</button>
   </div>
   <button type="button" class="btn wide lg" data-sheet-action="save">${draft.id ? 'Guardar cambios' : 'Guardar'}</button>
   ${draft.id ? `<button type="button" class="btn ghost danger wide" data-sheet-action="delete">${icon('trash', 18)}Borrar movimiento</button>` : ''}`;
