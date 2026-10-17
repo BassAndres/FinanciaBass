@@ -28,6 +28,7 @@ export function emptyState(today) {
     tx: [],
     processedExtIds: [],
     dismissed: {},
+    progress: { log: {}, badges: {}, reward: null, claimed: 0 },
   };
 }
 

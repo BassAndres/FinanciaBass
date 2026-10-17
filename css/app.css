@@ -346,3 +346,54 @@ button, a, .chip, .tile, .keypad button { touch-action: manipulation; }
 @supports (-webkit-touch-callout: none) {
   input:not([type=checkbox]):not([type=radio]), select, textarea:not([readonly]) { font-size: 16px !important; }
 }
+
+/* ----- Progreso (juego) ----- */
+.game { margin-top: 14px; padding: 14px; border-radius: var(--radius); background: var(--surface); border: 1px solid var(--line); cursor: pointer; }
+.game.glow { border-color: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 18%, transparent); }
+.game-top { display: flex; align-items: center; gap: 12px; }
+.ring { --p: 0%; flex: none; width: 58px; height: 58px; border-radius: 50%; display: grid; place-items: center; background: conic-gradient(var(--pos) var(--p), var(--surface-2) 0); }
+.ring > span { width: 46px; height: 46px; border-radius: 50%; background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
+.ring b { font-size: 1.15rem; font-weight: 800; letter-spacing: -.03em; }
+.ring small { font-size: .6rem; font-weight: 700; color: var(--muted); }
+.game-body { flex: 1; min-width: 0; }
+.game-title { margin: 0; font-weight: 800; font-size: .98rem; }
+.game-meta { margin: 1px 0 0; color: var(--muted); font-size: .8rem; }
+.game .chips { margin-top: 8px; gap: 5px; }
+.game .chip { min-height: 0; padding: 3px 8px; border-radius: 99px; font-size: .76rem; font-weight: 700; gap: 4px; background: var(--surface-2); border-color: transparent; }
+.game .chip.hot { background: var(--amber-bg); color: var(--amber); }
+.game .chip.hot .i, .game .chip.win .i { color: inherit; }
+.game .chip.win { background: var(--lime); color: #121a15; }
+.game-hint, .game-news { margin: 10px 0 0; font-size: .8rem; color: var(--muted); }
+.game-news { display: flex; gap: 8px; align-items: flex-start; color: var(--amber); }
+.game-news .i { flex: none; margin-top: 1px; }
+
+/* Mapa del periodo: un cuadrito por día; el regalo es tu día de pago. */
+.pmap { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 3px; align-items: center; }
+.pmap li { width: 8px; height: 8px; border-radius: 3px; background: var(--surface-2); }
+.pmap li.today { outline: 2px solid var(--text); outline-offset: 1px; }
+.pmap li.pay { width: auto; height: auto; background: none; color: var(--warn); display: grid; margin-left: 2px; }
+.m-z { background: var(--pos) !important; }
+.m-w { background: color-mix(in srgb, var(--pos) 70%, var(--surface)) !important; }
+.m-o { background: color-mix(in srgb, var(--pos) 35%, var(--surface)) !important; }
+.m-l { background: var(--bad) !important; }
+.pmap.big { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; margin-top: 0; }
+.pmap.big li { width: auto; height: auto; aspect-ratio: 1; border-radius: 10px; display: grid; place-items: center; font-size: .78rem; font-weight: 700; color: var(--muted); }
+.pmap.big li[class*="m-"] { color: var(--surface); }
+.pmap.big li.m-o { color: var(--text); }
+.pmap.big li.pay { background: var(--amber-bg); color: var(--amber); margin: 0; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 10px 2px 0; font-size: .74rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 5px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+.lvl { display: flex; gap: 12px; align-items: center; }
+.lvl-body { flex: 1; min-width: 0; }
+.lvl-body .meter { margin: 8px 0 4px; }
+.lvl-body small { color: var(--muted); font-size: .76rem; }
+.summary.mt { margin-top: 12px; }
+.summary b .i { display: inline-block; vertical-align: -2px; color: var(--warn); }
+.badges { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.bdg { display: flex; flex-direction: column; gap: 4px; padding: 12px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+.bdg:not(.on) { opacity: .6; }
+.bdg:not(.on) .ic { filter: grayscale(1); }
+.bdg b { font-size: .86rem; font-weight: 800; margin-top: 4px; }
+.bdg small { color: var(--muted); font-size: .74rem; line-height: 1.3; }

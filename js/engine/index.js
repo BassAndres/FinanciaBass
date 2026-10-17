@@ -12,3 +12,4 @@ export * from './ics.js';
 export * from './state.js';
 export * from './setup.js';
 export * from './recommend.js';
+export * from './progress.js';

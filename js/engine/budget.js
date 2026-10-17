@@ -90,7 +90,8 @@ function evalAt(state, ctx, P, t) {
   return { A, R: A + values + pool, bal, status, spentT, linked };
 }
 
-export function computeDashboard(state, today) {
+// Con { lite: true } solo calcula lo de tu número del día (sin tarjetas ni plan de pagos): para revisar muchos días.
+export function computeDashboard(state, today, { lite = false } = {}) {
   const P = periodFor(state.settings, today);
   const t = P.notStarted ? P.s : today;
   const ctx = periodContext(state, P);
@@ -130,10 +131,11 @@ export function computeDashboard(state, today) {
   const variableSpent = variable.reduce((a, x) => a + x.amount, 0);
   const todayTx = state.tx.filter((x) => x.date === t && (x.type === 'expense' || x.type === 'income'));
   const todayVariable = todayTx.filter((x) => !ctx.isPlanned(x) && !ctx.isTransport(x)).reduce((a, x) => a + (x.type === 'expense' ? x.amount : -x.amount), 0);
+  const base = Math.floor(libre / D);
+  if (lite) return { today, period: P, k, D, base, disponible, todaySpent: todayVariable };
   const liquid = liquidOf(now.bal, accounts);
   const statements = billsFor(state, accounts, now.bal, t).filter((s) => s.remaining > 0);
   const cards = cardSummaries(state, now.bal, accounts, t);
-  const base = Math.floor(libre / D);
   const dueNow = now.status.filter((i) => i.status === 'due' && i.kind !== 'income' && i.date <= t && isLiquid(accounts[i.account]))
     .reduce((a, i) => a + i.amount, 0);
   const liq = liquidity(state, ctx, P, t, { liquid: liquid - dueNow, disponible, base, statements });

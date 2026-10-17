@@ -431,3 +431,70 @@ export function recSheet(rec, onPick) {
     };
   });
 }
+
+// ---------- progreso: nivel, racha, mapa del periodo, premio y logros ----------
+export function progressSheet(d, { progressMap }) {
+  const p = d.progress;
+  const L = p.level;
+  const r = p.reward;
+  const won = (ctx.state.progress?.won || []).slice(-3).reverse();
+  const row = (label, value, hint = '') => `<div class="brow"><span>${label}${hint ? `<small>${hint}</small>` : ''}</span><b>${value}</b></div>`;
+  const unlocked = p.badges.filter((b) => b.unlocked).length;
+  const reward = r
+    ? `<div class="panel pad">
+        ${row(esc(r.text), `${r.value}/${r.goal}`, r.kind === 'days' ? `${r.goal} días sin pasarte desde el ${fmtDate(r.since, false)}` : `${r.goal} días seguidos sin pasarte`)}
+        <div class="meter ${r.done ? '' : 'warn'}"><i style="width:${Math.round((r.value / r.goal) * 100)}%"></i></div>
+        <div class="pair">${r.done ? `<button class="btn sm" data-action="reward-claim">${icon('gift', 16)}¡Lo gané! Reclamar</button>` : ''}
+          <button class="btn sm ghost" data-action="reward-set">Cambiar</button><button class="btn sm ghost" data-action="reward-clear">Quitar</button></div>
+        ${r.done ? '<p class="foot">Cuando lo compres, regístralo como cualquier gasto: así sigue cuadrando tu número.</p>' : ''}
+      </div>`
+    : `<div class="panel pad"><p class="foot top0">Elige algo que te guste (un antojo, el cine, unos tenis…) y cuántos días sin pasarte necesitas para ganártelo.</p>
+        <button class="btn sm" data-action="reward-set">${icon('gift', 16)}Ponerme un premio</button></div>`;
+  openSheet(`<h2>Tu progreso</h2>
+    <div class="lvl"><span class="ic hue-ink">${icon('star', 20)}</span><div class="lvl-body"><b>Nivel ${L.level} · ${L.name}</b>
+      <div class="meter"><i style="width:${Math.round(((p.xp - L.from) / (L.to - L.from)) * 100)}%"></i></div>
+      <small>${p.xp - L.from} de ${L.to - L.from} puntos para el nivel ${L.level + 1} · ${p.xp} en total</small></div></div>
+    <div class="summary mt">
+      <div><small>Racha</small><b>${icon('flame', 16)} ${p.streak}</b></div>
+      <div><small>Mejor racha</small><b>${p.best}</b></div>
+      <div><small>En verde</small><b>${p.periodGreen}/${p.periodClosed}</b></div>
+    </div>
+    ${p.notStarted ? '' : `<p class="label">Tu periodo: ${p.toPayday === 1 ? 'mañana te pagan' : `faltan ${p.toPayday} días para tu pago`}</p>
+    ${progressMap(p, 'big')}
+    <p class="legend"><span><i class="m-z"></i>Sin gastos</span><span><i class="m-w"></i>Menos que tu base</span><span><i class="m-o"></i>Sin pasarte</span><span><i class="m-l"></i>Te pasaste</span></p>`}
+    <p class="label">Tu premio</p>
+    ${reward}
+    ${won.length ? `<p class="foot">Ya ganaste: ${won.map((w) => `${esc(w.text)} (${fmtDate(w.date, false)})`).join(', ')}.</p>` : ''}
+    <p class="label">Logros · ${unlocked} de ${p.badges.length}</p>
+    <div class="badges">${p.badges.map((b) => `<div class="bdg ${b.unlocked ? 'on' : ''}"><span class="ic ${b.unlocked ? 'hue-amber' : ''}">${icon(b.icon, 20)}</span>
+      <b>${esc(b.name)}${b.fresh ? ' <span class="badge">Nuevo</span>' : ''}</b><small>${b.unlocked ? `Ganado el ${fmtDate(b.date, false)}` : esc(b.hint)}</small></div>`).join('')}</div>
+    <p class="label">Cómo ganas puntos</p>
+    <div class="panel pad breakdown">
+      ${row('Día sin gastos', '+20')}
+      ${row('Gastaste menos que tu base', '+15', `hoy tu base es ${money(d.base)}`)}
+      ${row('Usaste lo acumulado sin pasarte', '+10')}
+      ${row('Te pasaste', '0', 'y tu racha vuelve a empezar')}
+      ${row('Cada logro', '+50')}
+    </div>
+    <p class="foot">Cada día cuenta cuando termina. Si corriges un gasto de días pasados de este periodo, sus puntos se recalculan.</p>`);
+}
+
+export function rewardSheet(r) {
+  formSheet({
+    title: r ? 'Cambiar tu premio' : 'Tu premio',
+    subtitle: 'Algo que te vas a dar cuando lo logres. Págalo con tu número del día, como cualquier gasto.',
+    fields: [
+      { name: 'text', label: '¿Qué te vas a dar?', value: r?.text || '', placeholder: 'Ej. Un helado, ir al cine' },
+      { name: 'goal', label: '¿Cuántos días sin pasarte?', type: 'int', value: r?.goal || 7 },
+      { name: 'kind', label: 'Cómo se cuentan', type: 'seg', value: r?.kind || 'streak', options: [['streak', 'Seguidos (racha)'], ['days', 'En total desde hoy']] },
+    ],
+    onSave(_, v) {
+      const text = v.text.trim();
+      const goal = Math.round(Number(v.goal));
+      if (!text) { toast('Escribe tu premio'); return false; }
+      if (!(goal >= 1 && goal <= 365)) { toast('Elige entre 1 y 365 días'); return false; }
+      const since = r && r.kind === v.kind ? r.since : ctx.today();
+      ctx.commit((s) => { s.progress.reward = { text, goal, kind: v.kind, since }; }, `Premio: ${text} en ${goal} ${goal === 1 ? 'día' : 'días'}`, true);
+    },
+  });
+}
