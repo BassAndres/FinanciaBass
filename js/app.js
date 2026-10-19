@@ -6,14 +6,14 @@ import {
   recommendScheduleCards, changeScheduleAccount, nativeCapture, periodLeftover, progressLog, progressSummary,
 } from './engine/index.js';
 import * as store from './store.js';
-import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo } from './ui/dom.js';
+import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo, ask, celebrate, cheer, pickDate } from './ui/dom.js';
 import { hoyView, movsView, tarjetasView, planView, masView, entrySheet, billGroups, partReason, progressMap } from './ui/views.js';
 import { renderWizard, clearWizard } from './ui/wizard.js';
 import { isNative, native } from './native.js';
 import { icon } from './ui/icons.js';
 import {
   initEditors, accountsList, accountSheet, schedulesList, scheduleSheet, instanceSheet, statementSheet, statementsList,
-  faresSheet, periodSheet, breakdownSheet, cycleDueSheet, planWhySheet, recSheet, progressSheet, rewardSheet,
+  faresSheet, periodSheet, breakdownSheet, cycleDueSheet, planWhySheet, recSheet, progressSheet, rewardSheet, badgesSheet,
 } from './ui/editors.js';
 
 let state = store.load();
@@ -74,6 +74,9 @@ function runAutoPost() {
   for (const p of posts) state.tx.push({ id: uid(), ts: Date.now(), ...p });
   store.save(state);
 }
+
+// "Esto reemplaza tus datos": se pregunta solo si ya tienes datos.
+const replaceOk = (text) => !state || ask({ title: '¿Reemplazar tus datos?', text, ok: 'Reemplazar', danger: true, ic: 'upload' });
 
 const firstOf = (type) => state.accounts.find((a) => a.type === type && !a.archived)?.id;
 const liveAcc = (id) => (id && state.accounts.some((a) => a.id === id && !a.archived) ? id : null);
@@ -137,6 +140,8 @@ function updateProgress(t) {
   if (sum.newBadges.length || JSON.stringify(progress.log) !== JSON.stringify(progressMemo.log)) {
     state.progress = { ...progress, log: progressMemo.log, badges: { ...progress.badges, ...Object.fromEntries(sum.newBadges.map((id) => [id, t])) } };
     store.save(state);
+    const names = sum.badges.filter((b) => sum.newBadges.includes(b.id)).map((b) => esc(b.name));
+    if (names.length) cheer(names.length === 1 ? `¡Logro nuevo! <b>${names[0]}</b>` : `¡${names.length} logros nuevos! <b>${names.join(', ')}</b>`);
   }
   return sum;
 }
@@ -178,6 +183,12 @@ function paintEntry() {
       const k = e.target.closest('[data-key]')?.dataset.key;
       const pick = e.target.closest('[data-pick]');
       const act = e.target.closest('[data-sheet-action]')?.dataset.sheetAction;
+      if (e.target.closest('[data-pick-date]')) {
+        const t = today();
+        pickDate({ value: draft.date, title: '¿Cuándo fue?', quick: [['Hoy', t], ['Ayer', addDays(t, -1)], ['Antier', addDays(t, -2)]] })
+          .then((v) => { if (v) { draft.date = v; paintEntry(); } });
+        return;
+      }
       if (k) {
         let t = draft.amountText || '';
         if (k === 'del') t = t.slice(0, -1);
@@ -205,7 +216,6 @@ function paintEntry() {
     };
     body.oninput = (e) => { const f = e.target.dataset.field; if (f) draft[f] = e.target.value; };
     body.querySelector('details.refund')?.addEventListener('toggle', (e) => { draft.refundOpen = e.target.open; if (!e.target.open) draft.refund = ''; });
-    body.onchange = (e) => { if (e.target.dataset.field === 'date') paintEntry(); };
   });
 }
 
@@ -292,10 +302,10 @@ async function shareOrDownload(filename, text, mime) {
 async function pasteData() {
   let text = isNative() ? native.clipboard() : null;
   if (text == null) { try { text = await navigator.clipboard.readText(); } catch { text = null; } }
-  const go = (t) => {
+  const go = async (t) => {
     try {
       const data = store.importEnvelope(t);
-      if (state && !confirm('Esto reemplaza tus datos actuales. ¿Continuar?')) return;
+      if (!(await replaceOk('Lo que pegaste toma el lugar de todo lo que tienes ahora en la app.'))) return;
       replaceState(data, '¡Listo! Tus datos ya están en la app');
     } catch { toast('Lo que copiaste no son datos de FinanciaBass. En el navegador usa Más → Respaldo → Copiar mis datos'); }
   };
@@ -314,10 +324,10 @@ function replaceState(next, msg) {
   toast(msg);
 }
 
-function applyConfigCode(code) {
+async function applyConfigCode(code) {
   try {
     const data = store.importEnvelope(JSON.stringify(decodeConfig(code)));
-    if (state && !confirm('Esto reemplaza todos tus datos actuales por los del código. ¿Continuar?')) return;
+    if (!(await replaceOk('Todos tus datos actuales se cambian por los del código.'))) return;
     replaceState(data, '¡Listo! Tus datos quedaron cargados');
   } catch (e) { toast(e.message); }
 }
@@ -407,6 +417,7 @@ const actions = {
   'inst-open': (el) => instanceSheet(dash.instances.find((x) => x.id === el.dataset.id)),
   breakdown: () => breakdownSheet(dash),
   progress: () => progressSheet(dash, { progressMap }),
+  badges: () => badgesSheet(dash),
   'reward-set': () => rewardSheet(state.progress.reward),
   'reward-claim'() {
     const r = dash.progress.reward;
@@ -415,8 +426,10 @@ const actions = {
       s.progress.claimed = (s.progress.claimed || 0) + 1;
       s.progress.won = [...(s.progress.won || []), { text: r.text, date: today() }].slice(-20);
       s.progress.reward = null;
-    }, `¡Te lo ganaste! Disfruta: ${r.text}`);
-    actions.progress();
+    });
+    closeSheet();
+    celebrate({ title: '¡Te lo ganaste!', text: `Disfruta: <b>${esc(r.text)}</b>. Cuando lo compres, regístralo como cualquier gasto para que tu número siga cuadrando.`, ic: 'gift', ok: '¡A disfrutar!' })
+      .then(() => actions.progress());
   },
   'reward-clear'() {
     commit((s) => { s.progress.reward = null; }, 'Premio quitado', true);
@@ -452,8 +465,8 @@ const actions = {
     commit((s) => { addTx(s, { type: 'transfer', account: firstOf('bank') || firstOf('cash'), to: firstOf('savings'), amount: l.amount, date: l.date, cat: 'ahorro', desc: 'Sobrante del periodo' }); s.dismissed[l.key] = true; }, `${money(l.amount)} a tu alcancía`, true);
   },
   'leftover-keep': () => commit((s) => { s.dismissed[dash.leftover.key] = true; }),
-  rebase() {
-    if (!confirm('Tomar lo que te queda y repartirlo parejo en los días que faltan (lo acumulado deja de verse como extra de hoy). ¿Seguro?')) return;
+  async rebase() {
+    if (!(await ask({ title: '¿Repartir en los días que faltan?', text: 'Tomo lo que te queda y lo reparto parejo en los días que faltan. Lo acumulado deja de verse como extra de hoy.', ok: 'Repartir', ic: 'calendar' }))) return;
     commit((s) => { s.settings.rebases = [...(s.settings.rebases || []).filter((r) => r !== today()), today()]; }, 'Listo, repartido en los días que faltan', true);
   },
   'sched-edit': (el) => scheduleSheet(state.schedules.find((s) => s.id === el.dataset.id)),
@@ -476,12 +489,12 @@ const actions = {
     const list = store.listBackups();
     openSheet(`<h2>Copias automáticas</h2><p class="foot top0">Cada día, antes del primer cambio, guardo cómo estaban tus datos (últimos 7 días, solo en este celular).</p>
       <div class="panel">${list.map((b, i) => `<button type="button" class="item" data-i="${i}"><span class="ic hue-gray">${icon('clock', 18)}</span><span class="item-body"><span class="item-title">Como estaban el ${esc(b.date)}</span><span class="item-meta">Toca para restaurar</span></span>${icon('chevron', 16, 'mute')}</button>`).join('') || '<div class="empty small">Todavía no hay copias</div>'}</div>`, (body) => {
-      body.onclick = (e) => {
+      body.onclick = async (e) => {
         const i = e.target.closest('[data-i]')?.dataset.i;
         if (i == null) return;
         try {
           const data = store.restoreBackup(Number(i));
-          if (!confirm('Esto reemplaza tus datos actuales con esa copia. ¿Continuar?')) return;
+          if (!(await replaceOk(`Tus datos vuelven a como estaban el ${esc(list[i].date)}.`))) return;
           closeSheet(); replaceState(data, 'Copia restaurada');
         } catch (err) { toast(err.message); }
       };
@@ -496,9 +509,9 @@ const actions = {
   async 'copy-macro'(el) {
     try { await navigator.clipboard.writeText(el.dataset.text); toast('Copiado'); } catch { toast('Mantén presionado el texto para copiarlo'); }
   },
-  reset() {
-    if (!confirm('¿Borrar TODOS tus datos de este celular?')) return;
-    if (!confirm('De verdad: no se puede deshacer. ¿Hiciste respaldo?')) return;
+  async reset() {
+    if (!(await ask({ title: '¿Borrar todos tus datos?', text: 'Se borra todo lo de este celular: cuentas, movimientos, tu plan y tus logros.', ok: 'Borrar todo', danger: true }))) return;
+    if (!(await ask({ title: 'De verdad, no se puede deshacer', text: '¿Ya hiciste un respaldo? Sin él, tus datos se pierden para siempre.', ok: 'Sí, borrar', cancel: 'Mejor no', danger: true, ic: 'alert' }))) return;
     store.reset(true); clearWizard(); state = null; location.hash = ''; render();
   },
 };
@@ -514,7 +527,7 @@ document.addEventListener('change', async (e) => {
   if (el.id === 'import-file' && el.files[0]) {
     try {
       const data = store.importEnvelope(await el.files[0].text());
-      if (confirm('Esto reemplaza tus datos actuales con el respaldo. ¿Continuar?')) replaceState(data, 'Respaldo restaurado');
+      if (await replaceOk('Tus datos actuales se cambian por los del respaldo.')) replaceState(data, 'Respaldo restaurado');
     } catch { toast('Ese archivo no es un respaldo válido'); }
     el.value = '';
   }

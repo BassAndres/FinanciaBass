@@ -46,19 +46,23 @@ export function levelOf(xp) {
   return { level, name: LEVELS[Math.min(level, LEVELS.length) - 1], from: 50 * level * (level - 1), to: 50 * level * (level + 1) };
 }
 
+// `value` es tu avance hacia `goal` (para mostrar "5/7"); si hay `test`, ese decide si ya lo ganaste (las rachas se
+// ganan con tu mejor racha, pero el avance que ves es tu racha de ahora).
 export const BADGES = [
-  { id: 'first', icon: 'check', name: 'Primer día en verde', hint: 'Termina un día sin pasarte', test: (c) => c.greenDays >= 1 },
-  { id: 'streak3', icon: 'flame', name: 'Racha de 3', hint: '3 días seguidos sin pasarte', test: (c) => c.best >= 3 },
-  { id: 'streak7', icon: 'flame', name: 'Semana perfecta', hint: '7 días seguidos sin pasarte', test: (c) => c.best >= 7 },
-  { id: 'streak14', icon: 'flame', name: 'Dos semanas', hint: '14 días seguidos sin pasarte', test: (c) => c.best >= 14 },
-  { id: 'streak30', icon: 'trophy', name: 'Mes de acero', hint: '30 días seguidos sin pasarte', test: (c) => c.best >= 30 },
-  { id: 'nospend', icon: 'star', name: 'Día sin gastos', hint: 'Un día entero sin gastar', test: (c) => c.marks.z >= 1 },
-  { id: 'saver5', icon: 'savings', name: 'Hormiguita', hint: '5 días gastando menos que tu base', test: (c) => c.marks.z + c.marks.w >= 5 },
-  { id: 'period', icon: 'trophy', name: 'Periodo perfecto', hint: 'Cierra un periodo sin pasarte ningún día', test: (c) => c.perfectPeriod },
-  { id: 'piggy', icon: 'savings', name: 'A la alcancía', hint: 'Manda dinero a tu alcancía', test: (c) => c.piggy },
-  { id: 'card', icon: 'card', name: 'Tarjeta pagada', hint: 'Registra un pago de tarjeta', test: (c) => c.cardPaid },
-  { id: 'backup', icon: 'shield', name: 'Precavido', hint: 'Haz un respaldo de tus datos', test: (c) => c.backup },
-  { id: 'reward', icon: 'gift', name: 'Premio ganado', hint: 'Cumple la meta de tu premio', test: (c) => c.claimed >= 1 },
+  { id: 'first', icon: 'check', name: 'Primer día en verde', hint: 'Termina un día sin pasarte', goal: 1, value: (c) => c.greenDays },
+  { id: 'streak3', icon: 'flame', name: 'Racha de 3', hint: '3 días seguidos sin pasarte', goal: 3, value: (c) => c.streak, test: (c) => c.best >= 3 },
+  { id: 'streak7', icon: 'flame', name: 'Semana perfecta', hint: '7 días seguidos sin pasarte', goal: 7, value: (c) => c.streak, test: (c) => c.best >= 7 },
+  { id: 'streak14', icon: 'flame', name: 'Dos semanas', hint: '14 días seguidos sin pasarte', goal: 14, value: (c) => c.streak, test: (c) => c.best >= 14 },
+  { id: 'streak30', icon: 'trophy', name: 'Mes de acero', hint: '30 días seguidos sin pasarte', goal: 30, value: (c) => c.streak, test: (c) => c.best >= 30 },
+  { id: 'nospend', icon: 'star', name: 'Día sin gastos', hint: 'Un día entero sin gastar', goal: 1, value: (c) => c.marks.z },
+  { id: 'saver5', icon: 'savings', name: 'Hormiguita', hint: '5 días gastando menos que tu base', goal: 5, value: (c) => c.marks.z + c.marks.w },
+  { id: 'saver20', icon: 'savings', name: 'Ahorrador serio', hint: '20 días gastando menos que tu base', goal: 20, value: (c) => c.marks.z + c.marks.w },
+  { id: 'period', icon: 'trophy', name: 'Periodo perfecto', hint: 'Cierra un periodo sin pasarte ningún día', goal: 1, value: (c) => +c.perfectPeriod },
+  { id: 'piggy', icon: 'savings', name: 'A la alcancía', hint: 'Manda dinero a tu alcancía', goal: 1, value: (c) => +c.piggy },
+  { id: 'card', icon: 'card', name: 'Tarjeta pagada', hint: 'Registra un pago de tarjeta', goal: 1, value: (c) => +c.cardPaid },
+  { id: 'backup', icon: 'shield', name: 'Precavido', hint: 'Haz un respaldo de tus datos', goal: 1, value: (c) => +c.backup },
+  { id: 'reward', icon: 'gift', name: 'Premio ganado', hint: 'Cumple la meta de tu premio', goal: 1, value: (c) => c.claimed },
+  { id: 'reward3', icon: 'gift', name: 'Coleccionista', hint: 'Gana 3 premios', goal: 3, value: (c) => c.claimed },
 ];
 
 // Todo lo que se muestra: cuenta regresiva, mapa del periodo, racha, puntos, nivel, logros y premio.
@@ -95,16 +99,19 @@ export function progressSummary(state, d, log) {
   const savings = new Set(state.accounts.filter((a) => a.type === 'savings').map((a) => a.id));
   const accounts = Object.fromEntries(state.accounts.map((a) => [a.id, a]));
   const ctx = {
-    marks, best, greenDays: dates.filter((x) => green(log[x])).length, perfectPeriod,
+    marks, best: Math.max(best, streak), streak, greenDays: dates.filter((x) => green(log[x])).length, perfectPeriod,
     piggy: state.tx.some((x) => x.type === 'transfer' && savings.has(x.to)),
     cardPaid: state.tx.some((x) => x.type === 'transfer' && isCard(accounts[x.to])),
     backup: !!st.lastBackupAt, claimed: p.claimed || 0,
   };
   const stored = p.badges || {};
-  const badges = BADGES.map(({ test, ...b }) => {
-    const date = stored[b.id] || (test(ctx) ? today : null);
-    return { ...b, unlocked: !!date, date, fresh: date === today };
+  const badges = BADGES.map(({ test, value, ...b }) => {
+    const v = value(ctx);
+    const date = stored[b.id] || ((test ? test(ctx) : v >= b.goal) ? today : null);
+    return { ...b, value: Math.min(v, b.goal), unlocked: !!date, date, fresh: date === today };
   });
+  // El logro que tienes más cerca (para "te falta poco").
+  const next = badges.filter((b) => !b.unlocked && b.goal > 1 && b.value > 0).sort((a, b) => b.value / b.goal - a.value / a.goal)[0] || null;
   const newBadges = badges.filter((b) => b.unlocked && !stored[b.id]).map((b) => b.id);
 
   const xp = dates.reduce((a, x) => a + (DAY_XP[log[x]] || 0), 0) + BADGE_XP * badges.filter((b) => b.unlocked).length;
@@ -125,6 +132,6 @@ export function progressSummary(state, d, log) {
     payday, toPayday: diffDays(payday, today), day: P.notStarted ? 0 : diffDays(today, P.s) + 1, days: P.D,
     map, todayMark, streak, best: Math.max(best, streak),
     periodGreen: inPeriod.filter((x) => green(x.mark)).length, periodClosed: inPeriod.length,
-    xp, level: levelOf(xp), badges, newBadges, reward,
+    xp, level: levelOf(xp), badges, newBadges, next, reward, yesterday: log[addDays(today, -1)] || null,
   };
 }

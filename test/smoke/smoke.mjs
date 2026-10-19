@@ -186,6 +186,20 @@ await page.click('#sheet [data-row="2"]');
 await page.fill('#sheet input[name="amount"]', '1100');
 await page.click('#sheet [data-sheet-action="ok"]');
 assert.equal(await page.evaluate(() => window.fb.state.schedules.find((x) => x.id === 'fijo').amount), 110000);
+// Eliminar pregunta con un diálogo propio (no el del sistema); "Cancelar" no borra nada.
+await page.click('[data-action="sched-list"]');
+await page.click('#sheet [data-row="2"]');
+await page.click('#sheet [data-sheet-action="delete"]');
+await page.getByText('¿Eliminar Suscripción?').waitFor();
+await page.click('#dialog button[data-dlg="no"]');
+assert.ok(await page.evaluate(() => window.fb.state.schedules.some((x) => x.id === 'fijo')));
+await page.click('#sheet .sheet-x');
+// Logros en su propio botón de Hoy, y lo apartado para transporte.
+await page.goto(`${base}#/hoy`);
+await page.click('.trophy');
+await page.getByText('Cómo ganas puntos').waitFor();
+await page.click('#sheet .sheet-x');
+assert.match(await page.textContent('.aside'), /Transporte/);
 
 // Un ingreso planeado registrado a mano se liga solo y no infla el número.
 await page.goto(`${base}#/hoy`);
@@ -194,7 +208,10 @@ await page.click('#fab');
 await page.click('[data-pick="type"][data-val="income"]');
 for (const k of ['1', '5', '0', '0']) await page.click(`.keypad [data-key="${k}"]`);
 await page.click('[data-pick="account"][data-val="banco"]');
-await page.fill('#sheet input[data-field="date"]', '2026-10-10');
+// La fecha se elige en el calendario propio (no el del sistema).
+await page.click('#sheet [data-pick-date]');
+await page.click('#dialog .cal-day[data-d="2026-10-10"]');
+await page.locator('#dialog').waitFor({ state: 'hidden' });
 await page.click('#sheet [data-sheet-action="save"]');
 const linked = await page.evaluate(() => window.fb.state.tx.find((t) => t.type === 'income')?.planRef);
 assert.equal(linked, 'beca@2026-10-10');

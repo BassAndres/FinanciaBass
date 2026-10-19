@@ -1,7 +1,7 @@
 // Hojas para editar todo: cuentas y tarjetas, fijos e ingresos, cada cobro del mes, estados de cuenta,
 // accesos rápidos, periodo y la explicación de "¿por qué este número?".
 import { money, fmtDate, parseAmount, describeRule, instanceToTx, dateOf, year, month, addDays, weekday } from '../engine/index.js';
-import { esc, openSheet, closeSheet, toast, uid } from './dom.js';
+import { esc, openSheet, closeSheet, toast, uid, ask, pickDate, dateLabel } from './dom.js';
 import { icon } from './icons.js';
 
 let ctx; // { get state, commit, today, firstOf, addTx, editTx, render }
@@ -22,6 +22,11 @@ function field(f) {
   if (f.type === 'seg') {
     return `<div class="fgroup" ${show}><p class="label">${esc(f.label)}</p><div class="seg full" data-seg="${f.name}">${f.options.map(([v, l]) =>
       `<button type="button" class="${String(v) === String(f.value) ? 'on' : ''}" data-val="${esc(v)}">${esc(l)}</button>`).join('')}</div>
+      <input type="hidden" name="${f.name}" value="${esc(f.value ?? '')}"></div>`;
+  }
+  if (f.type === 'date') {
+    return `<div class="item field-row" ${show}><span class="item-body"><span class="item-title">${esc(f.label)}</span>${f.hint ? `<span class="item-meta">${esc(f.hint)}</span>` : ''}</span>
+      <button type="button" class="datebtn ${f.value ? '' : 'empty'}" data-date="${f.name}" data-title="${esc(f.label)}" ${f.optional ? 'data-optional="1"' : ''}>${icon('calendar', 16)}<span>${f.value ? dateLabel(f.value) : 'Elegir'}</span></button>
       <input type="hidden" name="${f.name}" value="${esc(f.value ?? '')}"></div>`;
   }
   const input = f.options
@@ -62,8 +67,21 @@ export function formSheet({ title, subtitle, fields, onSave, saveLabel = 'Guarda
         sync();
         return;
       }
+      const dbtn = e.target.closest('[data-date]');
+      if (dbtn) {
+        const input = body.querySelector(`input[name="${dbtn.dataset.date}"]`);
+        pickDate({ value: input.value, title: dbtn.dataset.title, allowEmpty: !!dbtn.dataset.optional }).then((v) => {
+          if (v === undefined) return;
+          input.value = v || '';
+          dbtn.classList.toggle('empty', !v);
+          dbtn.querySelector('span').textContent = v ? dateLabel(v) : 'Elegir';
+          sync();
+        });
+        return;
+      }
       const act = e.target.closest('[data-sheet-action]')?.dataset.sheetAction;
-      if (act && onSave(act, values()) !== false) closeSheet();
+      // onSave puede regresar una promesa (p. ej. si primero pregunta "¿seguro?").
+      if (act) Promise.resolve(onSave(act, values())).then((r) => { if (r !== false) closeSheet(); });
     };
   });
 }
@@ -113,9 +131,10 @@ export function accountSheet(a) {
     extra: isNew ? [] : [{ id: 'archive', label: 'Ocultar esta cuenta', icon: 'trash', danger: true }],
     onSave(act, v) {
       if (act === 'archive') {
-        if (!confirm(`¿Ocultar ${a.name}? Sus movimientos se conservan.`)) return false;
-        ctx.commit((s) => { s.accounts.find((x) => x.id === a.id).archived = true; }, 'Cuenta ocultada', true);
-        return;
+        return ask({ title: `¿Ocultar ${a.name}?`, text: 'Sus movimientos se conservan y puedes deshacerlo.', ok: 'Ocultar', danger: true }).then((ok) => {
+          if (!ok) return false;
+          ctx.commit((s) => { s.accounts.find((x) => x.id === a.id).archived = true; }, 'Cuenta ocultada', true);
+        });
       }
       if (!v.name.trim()) { toast('Ponle nombre'); return false; }
       const type = isNew ? v.type : a.type;
@@ -161,14 +180,15 @@ export function scheduleSheet(s) {
       { name: 'anchor', label: 'Una fecha en que toca', hint: 'Desde ahí, cada 14 días', type: 'date', value: s.rule.anchor && s.rule.type === 'biweekly' ? s.rule.anchor : t, when: { freq: ['biweekly'] } },
       { name: 'date', label: 'Fecha', type: 'date', value: s.rule.date || t, when: { freq: ['once'] } },
       { name: 'autoPost', label: 'Se cobra solo', hint: 'Lo registro automático y no te pregunto', type: 'checkbox', value: s.autoPost, when: { kind: ['fixed', 'msi'] } },
-      { name: 'end', label: 'Termina el', hint: 'Opcional', type: 'date', value: s.end || '' },
+      { name: 'end', label: 'Termina el', hint: 'Opcional', type: 'date', optional: true, value: s.end || '' },
     ],
     extra: isNew ? [] : [{ id: 'delete', label: 'Eliminar', icon: 'trash', danger: true }],
     onSave(act, v) {
       if (act === 'delete') {
-        if (!confirm(`¿Eliminar ${s.name}? Ya no se contará en tu plan.`)) return false;
-        ctx.commit((st) => { st.schedules = st.schedules.filter((x) => x.id !== s.id); }, 'Eliminado', true);
-        return;
+        return ask({ title: `¿Eliminar ${s.name}?`, text: 'Ya no se contará en tu plan. Puedes deshacerlo justo después.', ok: 'Eliminar', danger: true }).then((ok) => {
+          if (!ok) return false;
+          ctx.commit((st) => { st.schedules = st.schedules.filter((x) => x.id !== s.id); }, `${s.name} eliminado`, true);
+        });
       }
       const amount = parseAmount(v.amount);
       if (!v.name.trim() || !amount) { toast('Pon nombre y monto'); return false; }
@@ -276,7 +296,7 @@ export function statementSheet(card, stmt, pre = {}) {
       { name: 'amount', label: 'Pago para no generar intereses', type: 'money', value: pesos(stmt?.amount ?? pre.amount) },
       { name: 'due', label: 'Fecha límite de pago', type: 'date', value: stmt?.due || pre.due || '' },
       { name: 'beforeCut', label: 'Todavía no corta', hint: 'Es lo que llevo gastado; se paga después del corte', type: 'checkbox', value: stmt?.beforeCut },
-      { name: 'payFrom', label: 'Se puede pagar desde', hint: 'Opcional', type: 'date', value: stmt?.payFrom || '' },
+      { name: 'payFrom', label: 'Se puede pagar desde', hint: 'Opcional', type: 'date', optional: true, value: stmt?.payFrom || '' },
     ],
     extra: stmt ? [{ id: 'delete', label: 'Borrar este estado de cuenta', icon: 'trash', danger: true }] : [],
     onSave(act, v) {
@@ -432,51 +452,65 @@ export function recSheet(rec, onPick) {
   });
 }
 
-// ---------- progreso: nivel, racha, mapa del periodo, premio y logros ----------
+// ---------- progreso: tu periodo (calendario, racha y premio) ----------
+const brow = (label, value, hint = '') => `<div class="brow"><span>${label}${hint ? `<small>${hint}</small>` : ''}</span><b>${value}</b></div>`;
+
 export function progressSheet(d, { progressMap }) {
   const p = d.progress;
-  const L = p.level;
   const r = p.reward;
   const won = (ctx.state.progress?.won || []).slice(-3).reverse();
-  const row = (label, value, hint = '') => `<div class="brow"><span>${label}${hint ? `<small>${hint}</small>` : ''}</span><b>${value}</b></div>`;
-  const unlocked = p.badges.filter((b) => b.unlocked).length;
+  const left = d.R - d.reserve;
   const reward = r
-    ? `<div class="panel pad">
-        ${row(esc(r.text), `${r.value}/${r.goal}`, r.kind === 'days' ? `${r.goal} días sin pasarte desde el ${fmtDate(r.since, false)}` : `${r.goal} días seguidos sin pasarte`)}
-        <div class="meter ${r.done ? '' : 'warn'}"><i style="width:${Math.round((r.value / r.goal) * 100)}%"></i></div>
+    ? `<div class="panel pad reward-box${r.done ? ' done' : ''}">
+        ${brow(`${icon('gift', 16)} ${esc(r.text)}`, `${r.value}/${r.goal}`, r.kind === 'days' ? `${r.goal} días sin pasarte desde el ${fmtDate(r.since, false)}` : `${r.goal} días seguidos sin pasarte`)}
+        <div class="steps-bar">${Array.from({ length: Math.min(r.goal, 31) }, (_, i) => `<i class="${i < Math.round((r.value / r.goal) * Math.min(r.goal, 31)) ? 'on' : ''}"></i>`).join('')}</div>
+        <p class="foot top0">${r.done ? '¡Lo lograste! Reclámalo y date tu gusto.' : r.goal - r.value === 1 ? '¡Te falta un día!' : `Te faltan ${r.goal - r.value} días.`}</p>
         <div class="pair">${r.done ? `<button class="btn sm" data-action="reward-claim">${icon('gift', 16)}¡Lo gané! Reclamar</button>` : ''}
           <button class="btn sm ghost" data-action="reward-set">Cambiar</button><button class="btn sm ghost" data-action="reward-clear">Quitar</button></div>
-        ${r.done ? '<p class="foot">Cuando lo compres, regístralo como cualquier gasto: así sigue cuadrando tu número.</p>' : ''}
       </div>`
     : `<div class="panel pad"><p class="foot top0">Elige algo que te guste (un antojo, el cine, unos tenis…) y cuántos días sin pasarte necesitas para ganártelo.</p>
         <button class="btn sm" data-action="reward-set">${icon('gift', 16)}Ponerme un premio</button></div>`;
-  openSheet(`<h2>Tu progreso</h2>
-    <div class="lvl"><span class="ic hue-ink">${icon('star', 20)}</span><div class="lvl-body"><b>Nivel ${L.level} · ${L.name}</b>
-      <div class="meter"><i style="width:${Math.round(((p.xp - L.from) / (L.to - L.from)) * 100)}%"></i></div>
-      <small>${p.xp - L.from} de ${L.to - L.from} puntos para el nivel ${L.level + 1} · ${p.xp} en total</small></div></div>
-    <div class="summary mt">
+  openSheet(`<h2>Tu periodo</h2>
+    <div class="summary">
+      <div><small>${p.notStarted ? 'Empieza en' : 'Faltan'}</small><b>${p.notStarted ? p.startsIn : p.toPayday} ${(p.notStarted ? p.startsIn : p.toPayday) === 1 ? 'día' : 'días'}</b></div>
+      <div><small>Te quedan</small><b class="${left < 0 ? 'down' : ''}">${money(left, { decimals: false })}</b></div>
       <div><small>Racha</small><b>${icon('flame', 16)} ${p.streak}</b></div>
-      <div><small>Mejor racha</small><b>${p.best}</b></div>
-      <div><small>En verde</small><b>${p.periodGreen}/${p.periodClosed}</b></div>
     </div>
-    ${p.notStarted ? '' : `<p class="label">Tu periodo: ${p.toPayday === 1 ? 'mañana te pagan' : `faltan ${p.toPayday} días para tu pago`}</p>
-    ${progressMap(p, 'big')}
-    <p class="legend"><span><i class="m-z"></i>Sin gastos</span><span><i class="m-w"></i>Menos que tu base</span><span><i class="m-o"></i>Sin pasarte</span><span><i class="m-l"></i>Te pasaste</span></p>`}
+    ${p.notStarted ? '' : `<p class="label">${fmtDate(d.period.s, false)} al ${fmtDate(d.period.e, false)} · te pagan el ${fmtDate(p.payday)}</p>
+    ${progressMap(p, true)}
+    <p class="legend"><span><i class="m-z"></i>Sin gastos</span><span><i class="m-w"></i>Menos que tu base</span><span><i class="m-o"></i>Sin pasarte</span><span><i class="m-l"></i>Te pasaste</span></p>
+    <p class="foot">${p.periodClosed ? `Llevas <b>${p.periodGreen} de ${p.periodClosed}</b> días en verde este periodo. Tu mejor racha: ${p.best}.` : 'Hoy es el primer día del periodo: ¡a empezar bien!'}</p>`}
     <p class="label">Tu premio</p>
     ${reward}
     ${won.length ? `<p class="foot">Ya ganaste: ${won.map((w) => `${esc(w.text)} (${fmtDate(w.date, false)})`).join(', ')}.</p>` : ''}
-    <p class="label">Logros · ${unlocked} de ${p.badges.length}</p>
-    <div class="badges">${p.badges.map((b) => `<div class="bdg ${b.unlocked ? 'on' : ''}"><span class="ic ${b.unlocked ? 'hue-amber' : ''}">${icon(b.icon, 20)}</span>
-      <b>${esc(b.name)}${b.fresh ? ' <span class="badge">Nuevo</span>' : ''}</b><small>${b.unlocked ? `Ganado el ${fmtDate(b.date, false)}` : esc(b.hint)}</small></div>`).join('')}</div>
+    <button type="button" class="btn ghost wide" data-action="badges">${icon('trophy', 18)}Ver mis logros y mi nivel</button>`);
+}
+
+// ---------- logros, nivel y puntos ----------
+export function badgesSheet(d) {
+  const p = d.progress;
+  const L = p.level;
+  const got = p.badges.filter((b) => b.unlocked);
+  const nx = p.next;
+  const card = (b) => `<div class="bdg ${b.unlocked ? 'on' : ''}"><span class="ic ${b.unlocked ? 'hue-amber' : ''}">${icon(b.icon, 20)}</span>
+    <b>${esc(b.name)}${b.fresh ? ' <span class="badge">Nuevo</span>' : ''}</b><small>${b.unlocked ? `Ganado el ${fmtDate(b.date, false)}` : esc(b.hint)}</small>
+    ${!b.unlocked && b.goal > 1 ? `<div class="meter thin"><i style="width:${Math.round((b.value / b.goal) * 100)}%"></i></div><small>${b.value} de ${b.goal}</small>` : ''}</div>`;
+  openSheet(`<h2>Logros</h2>
+    <div class="lvl panel pad"><span class="lvl-num"><small>Nivel</small><b>${L.level}</b></span><div class="lvl-body"><b>${L.name}</b>
+      <div class="meter"><i style="width:${Math.round(((p.xp - L.from) / (L.to - L.from)) * 100)}%"></i></div>
+      <small>${p.xp - L.from} de ${L.to - L.from} puntos para el nivel ${L.level + 1} · ${p.xp} en total</small></div></div>
+    ${nx ? `<div class="notice good">${icon(nx.icon)}<p><b>Te falta poco: ${esc(nx.name)}</b>${esc(nx.hint)}. Llevas ${nx.value} de ${nx.goal}.</p></div>` : ''}
+    <p class="label">${got.length} de ${p.badges.length} ganados</p>
+    <div class="badges">${[...got, ...p.badges.filter((b) => !b.unlocked)].map(card).join('')}</div>
     <p class="label">Cómo ganas puntos</p>
     <div class="panel pad breakdown">
-      ${row('Día sin gastos', '+20')}
-      ${row('Gastaste menos que tu base', '+15', `hoy tu base es ${money(d.base)}`)}
-      ${row('Usaste lo acumulado sin pasarte', '+10')}
-      ${row('Te pasaste', '0', 'y tu racha vuelve a empezar')}
-      ${row('Cada logro', '+50')}
+      ${brow('Día sin gastos', '+20')}
+      ${brow('Gastaste menos que tu base', '+15', `hoy tu base es ${money(d.base)}`)}
+      ${brow('Usaste lo acumulado sin pasarte', '+10')}
+      ${brow('Te pasaste', '0', 'y tu racha vuelve a empezar')}
+      ${brow('Cada logro', '+50')}
     </div>
-    <p class="foot">Cada día cuenta cuando termina. Si corriges un gasto de días pasados de este periodo, sus puntos se recalculan.</p>`);
+    <p class="foot">Cada día cuenta cuando termina. Si corriges un gasto de días pasados de este periodo, sus puntos se recalculan. Los logros que ya ganaste no se pierden.</p>`);
 }
 
 export function rewardSheet(r) {
