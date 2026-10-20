@@ -203,8 +203,8 @@ function setAsideGroup(state, d) {
     const tone = tr.left < 0 ? 'bad' : extra < 0 ? 'warn' : 'ok';
     rows.push(`<div class="aside">
       <div class="aside-head"><span class="ic hue-blue">${icon('metro', 18)}</span><span class="item-body"><span class="item-title">Transporte</span>
-        <span class="item-meta">${tr.left < 0 ? `Te pasaste ${money(-tr.left)}: eso sale de tu número` : `${tr.days ? `Faltan ${tr.days} ${tr.days === 1 ? 'día' : 'días'} de ${money(tr.rate)}` : 'Ya no faltan días de transporte'} · ${extra > 0 ? `te sobran ${money(extra)}` : extra === 0 ? 'te alcanza justo' : `te faltarían ${money(-extra)}`}`}</span></span>
-        <span class="trail-col"><b class="amt">${money(Math.max(0, tr.left))}</b><small class="mute">de ${money(tr.budget, { decimals: false })}</small></span></div>
+        <span class="item-meta">${tr.left < 0 ? `Te pasaste ${money(-tr.left)}: eso sale de tu número` : `Llevas ${money(tr.spent)} gastado · ${tr.days ? `Faltan ${tr.days} ${tr.days === 1 ? 'día' : 'días'} de ${money(tr.rate)}` : 'Ya no faltan días de transporte'} · ${extra > 0 ? `te sobran ${money(extra)}` : extra === 0 ? 'te alcanza justo' : `te faltarían ${money(-extra)}`}`}</span></span>
+        <span class="trail-col"><b class="amt">${money(Math.max(0, tr.left))}</b><small class="mute">te quedan de ${money(tr.budget, { decimals: false })}</small></span></div>
       <div class="meter ${tone}"><i style="width:${tr.budget ? Math.max(0, Math.min(100, Math.round((tr.left / tr.budget) * 100))) : 0}%"></i></div></div>`);
   }
   for (const [x, label, ic, hue] of [[fx, 'Fijos por pagar', 'repeat', 'hue-violet'], [sv, 'Ahorro por apartar', 'savings', 'hue-green']]) {
@@ -213,7 +213,7 @@ function setAsideGroup(state, d) {
     rows.push(`<a class="aside" href="#/plan">
       <div class="aside-head"><span class="ic ${hue}">${icon(ic, 18)}</span><span class="item-body"><span class="item-title">${label}</span>
         <span class="item-meta">${x.n ? `${x.n} ${x.n === 1 ? 'pago' : 'pagos'} · sigue ${esc(x.next.name)} el ${fmtDate(x.next.date, false)}${x.paid ? ` · ya pagaste ${money(x.paid)}` : ''}` : `¡Ya quedó todo este periodo! (${money(x.paid)})`}</span></span>
-        <span class="trail-col"><b class="amt">${money(x.pending)}</b><small class="mute">de ${money(total, { decimals: false })}</small></span></div>
+        <span class="trail-col"><b class="amt">${money(x.pending)}</b><small class="mute">faltan de ${money(total, { decimals: false })}</small></span></div>
       <div class="meter"><i style="width:${total ? Math.round((x.paid / total) * 100) : 100}%"></i></div></a>`);
   }
   if (d.reserve) {
