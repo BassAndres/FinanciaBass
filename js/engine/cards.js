@@ -122,7 +122,7 @@ export function billsFor(state, accounts, bal, today) {
 }
 
 export function cardSummaries(state, bal, accounts, today) {
-  const cards = state.accounts.filter((a) => a.type === 'card' && !a.archived);
+  const cards = groupCards(state.accounts.filter((a) => a.type === 'card' && !a.archived)).flatMap((g) => g.cards);
   return cards.map((c) => {
     const owed = bal[c.id] || 0;
     const msi = (state.msiPlans || [])
@@ -132,6 +132,45 @@ export function cardSummaries(state, bal, accounts, today) {
     const pay = c.cutDay ? daysToPay(c, today) : null;
     return { ...c, owed, msi, util, pay };
   });
+}
+
+// Banco de la tarjeta: el que elegiste o, si no, uno conocido en el nombre o su primera palabra ("BBVA Azul" → "BBVA").
+const KNOWN_BANKS = ['BBVA', 'Banamex', 'Santander', 'Banorte', 'HSBC', 'Scotiabank', 'Inbursa', 'Azteca', 'Banregio', 'BanCoppel',
+  'Afirme', 'Invex', 'American Express', 'Amex', 'Nu', 'Hey', 'Klar', 'Stori', 'Plata', 'Vexi', 'Ualá', 'Mercado Pago', 'Rappi',
+  'Didi', 'Liverpool', 'Palacio de Hierro', 'Costco', 'Openbank', 'Spin', 'Bradescard', 'Falabella'];
+const GENERIC = /^(tarjeta|tdc|tc|crédito|credito|mi|la|el|de)$/i;
+export function bankOf(card) {
+  if ((card.bank || '').trim()) return card.bank.trim();
+  const name = (card.name || '').trim();
+  const known = KNOWN_BANKS.find((b) => new RegExp(`(^|[^\\p{L}])${b}($|[^\\p{L}])`, 'iu').test(name));
+  if (known) return known;
+  const first = name.split(/\s+/)[0];
+  return first && !GENERIC.test(first) ? first : 'Otras';
+}
+
+// Tarjetas juntas por banco, en el orden en que aparece la primera de cada banco.
+export function groupCards(cards) {
+  const by = new Map();
+  for (const c of cards) {
+    const key = bankOf(c).toLowerCase();
+    if (!by.has(key)) by.set(key, { key, bank: bankOf(c), cards: [] });
+    by.get(key).cards.push(c);
+  }
+  return [...by.values()];
+}
+
+// Sube (dir = -1) o baja (dir = 1) una tarjeta dentro de su banco, o todo un banco si `bankKey`.
+// Las tarjetas quedan juntas por banco en los mismos lugares que ocupaban en state.accounts.
+export function moveCard(state, { id, bankKey, dir }) {
+  const slots = [];
+  state.accounts.forEach((a, i) => { if (a.type === 'card' && !a.archived) slots.push(i); });
+  const groups = groupCards(slots.map((i) => state.accounts[i]));
+  const swap = (arr, i) => { const j = i + dir; if (i >= 0 && j >= 0 && j < arr.length) [arr[i], arr[j]] = [arr[j], arr[i]]; };
+  if (bankKey) swap(groups, groups.findIndex((g) => g.key === bankKey));
+  else { const g = groups.find((x) => x.cards.some((c) => c.id === id)); if (g) swap(g.cards, g.cards.findIndex((c) => c.id === id)); }
+  const order = groups.flatMap((g) => g.cards);
+  slots.forEach((slot, k) => { state.accounts[slot] = order[k]; });
+  return state;
 }
 
 // Mensualidades MSI ya cargadas (movimientos ligados a la regla del plan).

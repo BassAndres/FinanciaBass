@@ -1,5 +1,5 @@
 // Pantallas. Cada función regresa HTML; los botones usan data-action y los maneja app.js.
-import { money, fmtDate, diffDays, describeRule, addDays, localToday, weekday, DAY_XP } from '../engine/index.js';
+import { money, fmtDate, diffDays, describeRule, addDays, localToday, weekday, DAY_XP, groupCards } from '../engine/index.js';
 import { esc, dateLabel } from './dom.js';
 import { APK_URL, NATIVE_LATEST } from '../native.js';
 import { icon, badge, catMeta } from './icons.js';
@@ -326,8 +326,12 @@ export function tarjetasView(state, d) {
   const stByCard = {};
   for (const s of d.statements) (stByCard[s.card] ||= []).push(s);
   const total = d.cards.reduce((s, c) => s + c.owed, 0);
-  return `<header class="top"><p class="eyebrow">Debes en total ${money(total)}</p><h1>Tarjetas</h1></header>
-  ${d.cards.map((c) => {
+  const groups = groupCards(d.cards);
+  const grouped = d.cards.length > 1;
+  const moveBtns = (attrs, i, n, what) => `<span class="move">
+    <button type="button" class="move-btn" data-action="card-move" ${attrs} data-dir="-1" aria-label="Subir ${what}" ${i === 0 ? 'disabled' : ''}>${icon('up', 16)}</button>
+    <button type="button" class="move-btn" data-action="card-move" ${attrs} data-dir="1" aria-label="Bajar ${what}" ${i === n - 1 ? 'disabled' : ''}>${icon('down', 16)}</button></span>`;
+  const cardHtml = (c, i, n) => {
     const tone = c.util == null ? '' : c.util <= 0.3 ? 'ok' : c.util <= 0.5 ? 'warn' : 'bad';
     return `<article class="ccard">
       <div class="ccard-head">
@@ -350,9 +354,17 @@ export function tarjetasView(state, d) {
         <button class="btn sm" data-action="pay" data-card="${esc(c.id)}">${icon('pay', 16)}Pagar</button>
         <button class="btn sm ghost" data-action="stmt-new" data-card="${esc(c.id)}">Estado de cuenta</button>
         <button class="btn sm ghost" data-action="adjust" data-acc="${esc(c.id)}">Saldo real</button>
+        ${n > 1 ? moveBtns(`data-acc="${esc(c.id)}"`, i, n, esc(c.name)) : ''}
       </div>
     </article>`;
-  }).join('')}
+  };
+  return `<header class="top"><p class="eyebrow">Debes en total ${money(total)}</p><h1>Tarjetas</h1></header>
+  ${grouped ? groups.map((g, gi) => `<section class="group bank">
+    <div class="group-head"><h2>${icon('bank', 16, 'inline mute')} ${esc(g.bank)} <span class="group-sum">${g.cards.length > 1 ? `debes ${money(g.cards.reduce((s, c) => s + c.owed, 0))}` : ''}</span></h2>
+    ${groups.length > 1 ? moveBtns(`data-bank="${esc(g.key)}"`, gi, groups.length, esc(g.bank)) : ''}</div>
+    ${g.cards.map((c, i) => cardHtml(c, i, g.cards.length)).join('')}</section>`).join('')
+    : d.cards.map((c) => cardHtml(c, 0, 1)).join('')}
+  ${grouped ? '<p class="foot">Las tarjetas se juntan por banco. Cambia el banco de una tarjeta tocando su nombre, y usa las flechas para acomodarlas.</p>' : ''}
   ${recGroup(d)}
   ${d.payPlan.length ? group('Plan de pagos', `<div class="panel">${billGroups(d).sort((a, b) => (a.parts[0].date < b.parts[0].date ? -1 : 1)).map((g) => billRow(d, g)).join('')}</div><p class="foot">${state.settings.payStrategy === 'due' ? 'Pagas cada tarjeta en su fecha límite.' : 'Te sugiero abonar en cuanto tengas el dinero (lo elegiste así), en partes si no te alcanza todo. La fecha que importa es la límite.'} Toca una tarjeta para ver por qué. Siempre dejo al menos ${money(state.settings.liquidityFloor)} en tu cuenta.</p>`)
     : `<div class="empty">${icon('check', 28)}<p>Sin pagos pendientes registrados.</p></div>`}`;

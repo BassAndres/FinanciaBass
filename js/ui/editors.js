@@ -1,6 +1,6 @@
 // Hojas para editar todo: cuentas y tarjetas, fijos e ingresos, cada cobro del mes, estados de cuenta,
 // accesos rápidos, periodo y la explicación de "¿por qué este número?".
-import { money, fmtDate, parseAmount, describeRule, instanceToTx, dateOf, year, month, addDays, weekday } from '../engine/index.js';
+import { money, fmtDate, parseAmount, describeRule, instanceToTx, dateOf, year, month, addDays, weekday, bankOf } from '../engine/index.js';
 import { esc, openSheet, closeSheet, toast, uid, ask, pickDate, dateLabel } from './dom.js';
 import { icon } from './icons.js';
 
@@ -119,6 +119,7 @@ export function accountSheet(a) {
       { name: 'name', label: 'Nombre', value: a.name, placeholder: 'Ej. BBVA débito, Nu' },
       ...(isNew ? [{ name: 'type', label: 'Tipo', type: 'seg', value: a.type, options: ACC_TYPES.map(([v, l]) => [v, l.split(' /')[0]]) },
         { name: 'opening', label: 'Saldo de hoy', hint: 'En tarjeta: lo que debes', type: 'money', value: '' }] : []),
+      { name: 'bank', label: 'Banco', hint: 'Las tarjetas del mismo banco se muestran juntas', value: a.bank || '', placeholder: a.name ? bankOf(a) : 'Ej. BBVA', when: { type: ['card'] } },
       { name: 'limit', label: 'Límite de crédito', type: 'money', value: pesos(a.limit), when: { type: ['card'] } },
       { name: 'cutDay', label: 'Día de corte', options: MONTHDAYS.slice(0, 31), value: String(a.cutDay || 1), when: { type: ['card'] } },
       { name: 'dueMode', label: 'Fecha límite de pago', type: 'seg', value: a.dueDays ? 'days' : 'day', options: [['day', 'Un día del mes'], ['days', 'Días después del corte']], when: { type: ['card'] } },
@@ -144,6 +145,7 @@ export function accountSheet(a) {
       if (l4.length === 4 && (type === 'card' || type === 'bank')) next.last4 = l4; else delete next.last4;
       if (type === 'card') {
         Object.assign(next, { limit: parseAmount(v.limit) || 0, cutDay: Number(v.cutDay), blocked: !!v.blocked });
+        if (String(v.bank || '').trim()) next.bank = v.bank.trim(); else delete next.bank;
         if (v.dueMode === 'days') { next.dueDays = Math.max(1, Math.min(60, parseInt(v.dueDays, 10) || 20)); delete next.dueDay; }
         else { next.dueDay = Number(v.dueDay); delete next.dueDays; }
       }

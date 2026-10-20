@@ -3,7 +3,7 @@ import {
   parseAmount, money, parseIntent, matchInstance, decodeConfig, balancesAt,
   reminderEvents, googleCalendarLink, buildICS, describeRule, isPooledTransport, dayHistory, monthOutlook,
   parseCaptureLines, parseNotification, resolveAccount, findCaptureDuplicate, rawFromUrl, isCaptureTest, fromBrowserPkg, TEST_TEXT,
-  recommendScheduleCards, changeScheduleAccount, nativeCapture, periodLeftover, progressLog, progressSummary,
+  recommendScheduleCards, changeScheduleAccount, nativeCapture, periodLeftover, progressLog, progressSummary, moveCard,
 } from './engine/index.js';
 import * as store from './store.js';
 import { $, esc, toast, openSheet, closeSheet, uid, platform, isStandalone, browserInfo, ask, celebrate, cheer, pickDate } from './ui/dom.js';
@@ -446,6 +446,7 @@ const actions = {
   },
   'plan-why': (el) => planWhySheet(dash, el.dataset.id, { billGroups, partReason }),
   'acc-list': () => accountsList(),
+  'card-move': (el) => commit((s) => moveCard(s, { id: el.dataset.acc, bankKey: el.dataset.bank, dir: Number(el.dataset.dir) })),
   'acc-edit': (el) => accountSheet(state.accounts.find((a) => a.id === el.dataset.acc)),
   'sched-list': () => schedulesList(),
   'stmt-list': () => statementsList(),
