@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { periodFor } from '../../js/engine/periods.js';
 import { nextBusinessDay } from '../../js/engine/holidays.js';
-import { dueForCut, nextCut, recommendCard } from '../../js/engine/cards.js';
+import { dueForCut, nextCut, recommendCard, groupCards, moveCard, bankOf } from '../../js/engine/cards.js';
 import { parseAmount, money } from '../../js/engine/money.js';
 import { parseIntent, parseNotification, matchInstance } from '../../js/engine/quickadd.js';
 import { encodeConfig, decodeConfig } from '../../js/engine/configcode.js';
@@ -123,4 +123,28 @@ test('el service worker precarga todos los archivos de la app', () => {
   const walk = (dir) => readdirSync(new URL(`../../${dir}/`, import.meta.url), { withFileTypes: true })
     .flatMap((e) => (e.isDirectory() ? walk(`${dir}/${e.name}`) : [`${dir}/${e.name}`]));
   for (const f of [...walk('js'), ...walk('css')]) assert.ok(sw.includes(`'./${f}'`), `falta ${f} en sw.js`);
+});
+
+test('tarjetas: juntas por banco y se acomodan con las flechas', () => {
+  const st = { accounts: [
+    { id: 'a', type: 'card', name: 'BBVA Azul' },
+    { id: 'cash', type: 'cash', name: 'Efectivo' },
+    { id: 'b', type: 'card', name: 'Nu' },
+    { id: 'c', type: 'card', name: 'Oro', bank: 'bbva' },
+    { id: 'x', type: 'card', name: 'Vieja', archived: true },
+  ] };
+  assert.equal(bankOf(st.accounts[0]), 'BBVA');
+  assert.equal(bankOf({ name: 'Tarjeta Nu' }), 'Nu');
+  assert.equal(bankOf({ name: 'Mi tarjeta oro' }), 'Otras');
+  assert.equal(bankOf({ name: 'Nube' }), 'Nube');
+  assert.equal(bankOf({ name: 'Oro Banamex' }), 'Banamex');
+  assert.deepEqual(groupCards(st.accounts.filter((a) => a.type === 'card' && !a.archived)).map((g) => [g.bank, g.cards.map((c) => c.id)]),
+    [['BBVA', ['a', 'c']], ['Nu', ['b']]]);
+  const ids = () => st.accounts.map((a) => a.id);
+  moveCard(st, { id: 'c', dir: -1 });
+  assert.deepEqual(ids(), ['c', 'cash', 'a', 'b', 'x']);
+  moveCard(st, { id: 'c', dir: -1 }); // ya es la primera de su banco
+  assert.deepEqual(ids(), ['c', 'cash', 'a', 'b', 'x']);
+  moveCard(st, { bankKey: 'nu', dir: -1 });
+  assert.deepEqual(ids(), ['b', 'cash', 'c', 'a', 'x']);
 });
